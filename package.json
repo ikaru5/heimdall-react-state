@@ -1,0 +1,33 @@
+{
+  "name": "@ikaru5/heimdall-react-state",
+  "version": "0.1.0",
+  "description": "React bindings and observable store wrapper for heimdall-contract instances.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "require": "./src/index.js"
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "heimdall",
+    "contract",
+    "react",
+    "state",
+    "validation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "react": "^18.2.0",
+    "react-test-renderer": "^18.2.0"
+  }
+}
