@@ -1,4 +1,5 @@
 const ROOT_KEY = "";
+const RAW_SYMBOL = Symbol.for("heimdall-react-state.raw");
 
 const isPlainObject = (value) => Object.prototype.toString.call(value) === "[object Object]";
 
@@ -24,10 +25,24 @@ const traverseAncestors = (pathArray, visitor) => {
 
 const readAtPath = (target, pathArray) => {
   if (!pathArray.length) return target;
-  return pathArray.reduce((current, segment) => (current == null ? current : current[segment]), target);
+  return pathArray.reduce(
+    (current, segment) => (current == null ? current : current[segment]),
+    target,
+  );
 };
 
 const DEFAULT_SUBSCRIBE_OPTIONS = { exact: false };
+const MUTATING_ARRAY_METHODS = new Set([
+  "copyWithin",
+  "fill",
+  "pop",
+  "push",
+  "reverse",
+  "shift",
+  "sort",
+  "splice",
+  "unshift",
+]);
 
 export function createContractStore(contract, options = {}) {
   if ("object" !== typeof contract || contract === null) {
@@ -40,17 +55,18 @@ export function createContractStore(contract, options = {}) {
   const contractProxyCache = new WeakMap();
   const objectProxyCache = new WeakMap();
   const arrayProxyCache = new WeakMap();
-
-  const bumpRevision = (key) => {
+  function bumpRevision(key) {
     const nextRevision = (revisions.get(key) || 0) + 1;
     revisions.set(key, nextRevision);
     return nextRevision;
-  };
+  }
 
-  const emitChange = (pathArray, payload) => {
+  function emitChange(pathArray, payload) {
     const key = pathToKey(pathArray);
     const baseEvent = { ...payload, path: pathArray, key };
-    if ("function" === typeof options.onUpdate) options.onUpdate(baseEvent);
+    if ("function" === typeof options.onUpdate) {
+      options.onUpdate(baseEvent);
+    }
 
     const visited = new Set();
     traverseAncestors(pathArray, (ancestorKey) => {
@@ -64,14 +80,16 @@ export function createContractStore(contract, options = {}) {
         listener.callback({ ...baseEvent, observerKey: ancestorKey, revision });
       });
     });
-  };
+  }
 
-  const ensureSubscriptionSet = (key) => {
-    if (!subscribers.has(key)) subscribers.set(key, new Set());
+  function ensureSubscriptionSet(key) {
+    if (!subscribers.has(key)) {
+      subscribers.set(key, new Set());
+    }
     return subscribers.get(key);
-  };
+  }
 
-  const subscribe = (path, callback, opts = {}) => {
+  function subscribe(path, callback, opts = {}) {
     const { exact } = { ...DEFAULT_SUBSCRIBE_OPTIONS, ...opts };
     const normalized = normalizePath(path);
     const key = pathToKey(normalized);
@@ -84,9 +102,9 @@ export function createContractStore(contract, options = {}) {
       currentSet.delete(entry);
       if (0 === currentSet.size) subscribers.delete(key);
     };
-  };
+  }
 
-  const instrumentContract = (instance, basePath) => {
+  function instrumentContract(instance, basePath) {
     if (!instance || "function" !== typeof instance.setValueAtPath) return;
     if (instrumentedContracts.has(instance)) return;
     instrumentedContracts.add(instance);
@@ -107,15 +125,14 @@ export function createContractStore(contract, options = {}) {
       }
       return result;
     };
-  };
+  }
 
-  const captureNestedStructures = (value, path) => {
+  function captureNestedStructures(value, path) {
     if (Array.isArray(value)) {
       wrapArray(value, path);
       value.forEach((entry, index) => {
         const nestedPath = path.concat(toPathSegment(index));
-        if (isContractLike(entry)) instrumentContract(entry, nestedPath);
-        else if (isPlainObject(entry)) wrapPlainObject(entry, nestedPath);
+        captureNestedStructures(entry, nestedPath);
       });
       return;
     }
@@ -124,9 +141,8 @@ export function createContractStore(contract, options = {}) {
       instrumentContract(value, path);
       if (value && value.schema && "object" === typeof value.schema) {
         Object.keys(value.schema).forEach((key) => {
-          const nestedValue = value[key];
           const nestedPath = path.concat(toPathSegment(key));
-          captureNestedStructures(nestedValue, nestedPath);
+          captureNestedStructures(value[key], nestedPath);
         });
       }
       return;
@@ -139,14 +155,21 @@ export function createContractStore(contract, options = {}) {
         captureNestedStructures(value[key], nestedPath);
       });
     }
-  };
+  }
 
-  const isContractLike = (candidate) => {
+  function isContractLike(candidate) {
     if (!candidate || "object" !== typeof candidate) return false;
     return "function" === typeof candidate.assign && "function" === typeof candidate.setValueAtPath;
-  };
+  }
 
-  const wrapContract = (instance, basePath) => {
+  function ensureInstrumented(value, basePath) {
+    if (Array.isArray(value)) return wrapArray(value, basePath);
+    if (isContractLike(value)) return wrapContract(value, basePath);
+    if (isPlainObject(value)) return wrapPlainObject(value, basePath);
+    return value;
+  }
+
+  function wrapContract(instance, basePath) {
     if (!instance || "object" !== typeof instance) return instance;
     if (contractProxyCache.has(instance)) return contractProxyCache.get(instance);
 
@@ -154,20 +177,19 @@ export function createContractStore(contract, options = {}) {
 
     const proxy = new Proxy(instance, {
       get(target, property, receiver) {
-        if (typeof property === "symbol" && property !== Symbol.for("heimdall-react-state.raw")) {
+        if (typeof property === "symbol") {
+          if (property === RAW_SYMBOL) return target;
           return Reflect.get(target, property, receiver);
         }
-        if (property === Symbol.for("heimdall-react-state.raw")) return target;
         const value = Reflect.get(target, property, receiver);
         if ("function" === typeof value) return value.bind(target);
         const propertyPath = basePath.concat(toPathSegment(property));
-        if (Array.isArray(value)) return wrapArray(value, propertyPath);
-        if (isContractLike(value)) return wrapContract(value, propertyPath);
-        if (isPlainObject(value)) return wrapPlainObject(value, propertyPath);
-        return value;
+        return ensureInstrumented(value, propertyPath);
       },
       set(target, property, value, receiver) {
-        if (typeof property === "symbol") return Reflect.set(target, property, value, receiver);
+        if (typeof property === "symbol") {
+          return Reflect.set(target, property, value, receiver);
+        }
         const propertyPath = basePath.concat(toPathSegment(property));
         const previousValue = Reflect.get(target, property, receiver);
         const didSet = Reflect.set(target, property, value, receiver);
@@ -178,36 +200,40 @@ export function createContractStore(contract, options = {}) {
         return didSet;
       },
       deleteProperty(target, property) {
-        if (typeof property === "symbol") return Reflect.deleteProperty(target, property);
+        if (typeof property === "symbol") {
+          return Reflect.deleteProperty(target, property);
+        }
         if (!Object.prototype.hasOwnProperty.call(target, property)) return true;
         const propertyPath = basePath.concat(toPathSegment(property));
         const previousValue = target[property];
         const didDelete = Reflect.deleteProperty(target, property);
         if (didDelete) emitChange(propertyPath, { type: "delete", previousValue });
         return didDelete;
-      }
+      },
     });
 
     contractProxyCache.set(instance, proxy);
     return proxy;
-  };
+  }
 
-  const wrapPlainObject = (target, basePath) => {
+  function wrapPlainObject(target, basePath) {
     if (!target || "object" !== typeof target) return target;
     if (objectProxyCache.has(target)) return objectProxyCache.get(target);
 
     const proxy = new Proxy(target, {
       get(obj, property, receiver) {
-        if (typeof property === "symbol") return Reflect.get(obj, property, receiver);
+        if (typeof property === "symbol") {
+          if (property === RAW_SYMBOL) return obj;
+          return Reflect.get(obj, property, receiver);
+        }
         const value = Reflect.get(obj, property, receiver);
         const propertyPath = basePath.concat(toPathSegment(property));
-        if (Array.isArray(value)) return wrapArray(value, propertyPath);
-        if (isContractLike(value)) return wrapContract(value, propertyPath);
-        if (isPlainObject(value)) return wrapPlainObject(value, propertyPath);
-        return value;
+        return ensureInstrumented(value, propertyPath);
       },
       set(obj, property, value, receiver) {
-        if (typeof property === "symbol") return Reflect.set(obj, property, value, receiver);
+        if (typeof property === "symbol") {
+          return Reflect.set(obj, property, value, receiver);
+        }
         const propertyPath = basePath.concat(toPathSegment(property));
         const previousValue = Reflect.get(obj, property, receiver);
         const didSet = Reflect.set(obj, property, value, receiver);
@@ -218,36 +244,43 @@ export function createContractStore(contract, options = {}) {
         return didSet;
       },
       deleteProperty(obj, property) {
-        if (typeof property === "symbol") return Reflect.deleteProperty(obj, property);
+        if (typeof property === "symbol") {
+          return Reflect.deleteProperty(obj, property);
+        }
         if (!Object.prototype.hasOwnProperty.call(obj, property)) return true;
         const propertyPath = basePath.concat(toPathSegment(property));
         const previousValue = obj[property];
         const didDelete = Reflect.deleteProperty(obj, property);
         if (didDelete) emitChange(propertyPath, { type: "delete", previousValue });
         return didDelete;
-      }
+      },
     });
 
     objectProxyCache.set(target, proxy);
     return proxy;
-  };
+  }
 
-  const wrapArray = (target, basePath) => {
+  function wrapArray(target, basePath) {
     if (!Array.isArray(target)) return target;
 
     target.forEach((entry, index) => {
       const nestedPath = basePath.concat(toPathSegment(index));
-      if (isContractLike(entry)) instrumentContract(entry, nestedPath);
-      else if (isPlainObject(entry)) wrapPlainObject(entry, nestedPath);
+      captureNestedStructures(entry, nestedPath);
     });
 
     if (arrayProxyCache.has(target)) return arrayProxyCache.get(target);
 
     const proxy = new Proxy(target, {
       get(arr, property, receiver) {
-        if (typeof property === "symbol") return Reflect.get(arr, property, receiver);
+        if (typeof property === "symbol") {
+          if (property === RAW_SYMBOL) return arr;
+          return Reflect.get(arr, property, receiver);
+        }
         const value = Reflect.get(arr, property, receiver);
         if ("function" === typeof value) {
+          if (!MUTATING_ARRAY_METHODS.has(property)) {
+            return value.bind(arr);
+          }
           return (...args) => {
             const result = value.apply(arr, args);
             captureNestedStructures(arr, basePath);
@@ -256,13 +289,12 @@ export function createContractStore(contract, options = {}) {
           };
         }
         const propertyPath = basePath.concat(toPathSegment(property));
-        if (Array.isArray(value)) return wrapArray(value, propertyPath);
-        if (isContractLike(value)) return wrapContract(value, propertyPath);
-        if (isPlainObject(value)) return wrapPlainObject(value, propertyPath);
-        return value;
+        return ensureInstrumented(value, propertyPath);
       },
       set(arr, property, value, receiver) {
-        if (typeof property === "symbol") return Reflect.set(arr, property, value, receiver);
+        if (typeof property === "symbol") {
+          return Reflect.set(arr, property, value, receiver);
+        }
         const propertyPath = basePath.concat(toPathSegment(property));
         const previousValue = Reflect.get(arr, property, receiver);
         const didSet = Reflect.set(arr, property, value, receiver);
@@ -273,40 +305,42 @@ export function createContractStore(contract, options = {}) {
         return didSet;
       },
       deleteProperty(arr, property) {
-        if (typeof property === "symbol") return Reflect.deleteProperty(arr, property);
+        if (typeof property === "symbol") {
+          return Reflect.deleteProperty(arr, property);
+        }
         if (!Object.prototype.hasOwnProperty.call(arr, property)) return true;
         const propertyPath = basePath.concat(toPathSegment(property));
         const previousValue = arr[property];
         const didDelete = Reflect.deleteProperty(arr, property);
         if (didDelete) emitChange(propertyPath, { type: "delete", previousValue });
         return didDelete;
-      }
+      },
     });
 
     arrayProxyCache.set(target, proxy);
     return proxy;
-  };
+  }
 
   captureNestedStructures(contract, []);
   const proxiedContract = wrapContract(contract, []);
 
-  const getValue = (path) => {
+  function getValue(path) {
     const normalized = normalizePath(path);
     if (!normalized.length) return proxiedContract;
     return readAtPath(proxiedContract, normalized);
-  };
+  }
 
-  const setValue = (path, value) => {
+  function setValue(path, value) {
     const normalized = normalizePath(path);
     if (!normalized.length) throw new Error("setValue requires a non-empty path");
     contract.setValueAtPath(normalized, value);
     return value;
-  };
+  }
 
-  const getRevision = (path) => {
+  function getRevision(path) {
     const normalized = normalizePath(path);
     return revisions.get(pathToKey(normalized)) || 0;
-  };
+  }
 
   return {
     contract: proxiedContract,
@@ -317,12 +351,12 @@ export function createContractStore(contract, options = {}) {
     assign: (...args) => contract.assign(...args),
     isValid: (...args) => contract.isValid(...args),
     getContract: () => proxiedContract,
-    getOriginalContract: () => contract
+    getOriginalContract: () => contract,
   };
 }
 
 export const __INTERNALS__ = {
   normalizePath,
   pathToKey,
-  readAtPath
+  readAtPath,
 };

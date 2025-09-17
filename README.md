@@ -20,7 +20,7 @@ class SignupContract extends Contract {
   defineSchema() {
     return {
       name: { dType: "String", presence: true },
-      email: { dType: "String", presence: true, isEmail: true }
+      email: { dType: "String", presence: true, isEmail: true },
     };
   }
 }
@@ -34,10 +34,7 @@ function NameField() {
   return (
     <label>
       Name
-      <input
-        value={value}
-        onChange={(event) => store.setValue("name", event.target.value)}
-      />
+      <input value={value} onChange={(event) => store.setValue("name", event.target.value)} />
     </label>
   );
 }
@@ -51,15 +48,13 @@ function NameField() {
 
 Wraps an existing contract instance and returns an observable store:
 
-| property | description |
-| --- | --- |
-| `contract` | Proxy around the original contract. Direct assignments (e.g. `store.contract.name = "Ada"`) trigger listeners. |
-| `subscribe(path, listener, options?)` | Low-level subscription helper used by the hooks. `path` can be omitted for global subscriptions. |
-| `getValue(path)` | Returns the current value at `path` (string or array form). |
-| `setValue(path, value)` | Writes through the contract using its `setValueAtPath` helper and broadcasts the change. |
-| `getRevision(path?)` | Returns a monotonic revision number for the path, useful for advanced memoization. |
-| `assign`, `isValid` | Bound shorthands for the matching contract methods. |
-| `getContract()` / `getOriginalContract()` | Accessors for the proxied or raw instance. |
+- `contract`: Proxy around the original contract. Direct assignments (for example `store.contract.name = "Ada"`) trigger listeners.
+- `subscribe(path, listener, options?)`: Low-level subscription helper used by the hooks. `path` can be omitted for global subscriptions.
+- `getValue(path)`: Returns the current value at `path` (string or array form).
+- `setValue(path, value)`: Writes through the contract using its `setValueAtPath` helper and broadcasts the change.
+- `getRevision(path?)`: Returns a monotonic revision number for the path, useful for advanced memoization.
+- `assign`, `isValid`: Bound shorthands for the matching contract methods.
+- `getContract()` / `getOriginalContract()`: Accessors for the proxied or raw instance.
 
 The wrapper instruments nested contracts, plain objects and arrays. For arrays the revision counter is increased whenever indices or length change, so React listeners pick up updates even if the underlying reference stays the same.
 
@@ -104,10 +99,10 @@ function SubmitButton() {
 
       return {
         isComplete,
-        canSubmit: isComplete && contractProxy.isValid()
+        canSubmit: isComplete && contractProxy.isValid(),
       };
     }, []),
-    { equalityFn: compareSummary }
+    { equalityFn: compareSummary },
   );
 
   return (

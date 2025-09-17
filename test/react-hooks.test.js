@@ -48,14 +48,14 @@ test("useContractValue re-renders only the subscribed component", async () => {
   const contract = new TestContract({
     profile: {
       firstName: "Ada",
-      lastName: "Lovelace"
-    }
+      lastName: "Lovelace",
+    },
   });
   const store = createContractStore(contract);
 
   const renders = {
     first: [],
-    last: []
+    last: [],
   };
 
   function FirstName() {
@@ -71,7 +71,12 @@ test("useContractValue re-renders only the subscribed component", async () => {
   }
 
   function App() {
-    return React.createElement(React.Fragment, null, React.createElement(FirstName), React.createElement(LastName));
+    return React.createElement(
+      React.Fragment,
+      null,
+      React.createElement(FirstName),
+      React.createElement(LastName),
+    );
   }
 
   let renderer;
@@ -108,11 +113,11 @@ test("useContractValue re-renders only the subscribed component", async () => {
 test("useContractValue tracks nested contract segments", async () => {
   const nested = new TestContract({
     city: "Paris",
-    zip: "75000"
+    zip: "75000",
   });
   const contract = new TestContract({
     address: nested,
-    country: "FR"
+    country: "FR",
   });
   const store = createContractStore(contract);
 
@@ -155,8 +160,8 @@ test("useContractSelector recomputes derived data", async () => {
   const contract = new TestContract({
     profile: {
       firstName: "Ada",
-      lastName: "Lovelace"
-    }
+      lastName: "Lovelace",
+    },
   });
   const store = createContractStore(contract);
 
@@ -165,7 +170,7 @@ test("useContractSelector recomputes derived data", async () => {
   function FullName() {
     const fullName = useContractSelector(
       store,
-      (current) => `${current.profile.firstName} ${current.profile.lastName}`
+      (current) => `${current.profile.firstName} ${current.profile.lastName}`,
     );
     selections.push(fullName);
     return React.createElement("span", null, fullName);
@@ -197,8 +202,8 @@ test("useContract provides a live contract reference", async () => {
   const contract = new TestContract({
     profile: {
       firstName: "Ada",
-      lastName: "Lovelace"
-    }
+      lastName: "Lovelace",
+    },
   });
   const store = createContractStore(contract);
 
