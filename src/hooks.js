@@ -2,8 +2,6 @@ import { useCallback, useMemo } from "react";
 import { useSyncExternalStore } from "react";
 import { __INTERNALS__ } from "./createContractStore.js";
 
-const identity = (value) => value;
-
 export const useContractSelector = (store, selector, options = {}) => {
   if (!store || "function" !== typeof store.subscribe) {
     throw new TypeError("useContractSelector requires a store created by createContractStore");
@@ -66,4 +64,7 @@ export const useContractValue = (store, path, options = {}) => {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
-export const useContract = (store) => useContractSelector(store, identity, { equalityFn: () => false });
+export const useContract = (store) => {
+  const revision = useContractSelector(store, () => store.getRevision());
+  return useMemo(() => store.contract, [store, revision]);
+};
