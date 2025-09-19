@@ -1,35 +1,13 @@
-const ROOT_KEY = "";
-const RAW_SYMBOL = Symbol.for("heimdall-react-state.raw");
+import {
+  RAW_SYMBOL,
+  normalizePath,
+  pathToKey,
+  readAtPath,
+  toPathSegment,
+  traverseAncestors,
+} from "./internal/path.js";
 
 const isPlainObject = (value) => Object.prototype.toString.call(value) === "[object Object]";
-
-const toPathSegment = (segment) => {
-  if (segment === undefined || segment === null) return "";
-  return typeof segment === "number" ? String(segment) : String(segment);
-};
-
-const normalizePath = (path) => {
-  if (path === undefined || path === null || path === "") return [];
-  if (Array.isArray(path)) return path.map(toPathSegment);
-  if ("string" === typeof path) return path.split(".").filter(Boolean).map(toPathSegment);
-  throw new TypeError("path must be a string, array or undefined");
-};
-
-const pathToKey = (pathArray) => (pathArray.length ? pathArray.join(".") : ROOT_KEY);
-
-const traverseAncestors = (pathArray, visitor) => {
-  for (let index = pathArray.length; index >= 0; index -= 1) {
-    visitor(pathToKey(pathArray.slice(0, index)));
-  }
-};
-
-const readAtPath = (target, pathArray) => {
-  if (!pathArray.length) return target;
-  return pathArray.reduce(
-    (current, segment) => (current == null ? current : current[segment]),
-    target,
-  );
-};
 
 const DEFAULT_SUBSCRIBE_OPTIONS = { exact: false };
 const MUTATING_ARRAY_METHODS = new Set([
@@ -44,6 +22,16 @@ const MUTATING_ARRAY_METHODS = new Set([
   "unshift",
 ]);
 
+/**
+ * Creates a reactive store around a Heimdall contract instance.
+ *
+ * The returned store exposes helpers that mirror the original contract methods while also
+ * enabling React components to subscribe to fine grained updates.
+ *
+ * @param {object} contract A Heimdall contract instance.
+ * @param {{ onUpdate?: (event: import("./types.js").ContractUpdateEvent) => void }} [options]
+ * @returns {import("./types.js").ContractStore}
+ */
 export function createContractStore(contract, options = {}) {
   if ("object" !== typeof contract || contract === null) {
     throw new TypeError("createContractStore expects a contract instance");
@@ -55,12 +43,22 @@ export function createContractStore(contract, options = {}) {
   const contractProxyCache = new WeakMap();
   const objectProxyCache = new WeakMap();
   const arrayProxyCache = new WeakMap();
+  /**
+   * Advances the revision counter for the provided cache key.
+   * @param {string} key
+   * @returns {number}
+   */
   function bumpRevision(key) {
     const nextRevision = (revisions.get(key) || 0) + 1;
     revisions.set(key, nextRevision);
     return nextRevision;
   }
 
+  /**
+   * Notifies subscribers about a change at the provided path.
+   * @param {string[]} pathArray
+   * @param {import("./types.js").EmitPayload} payload
+   */
   function emitChange(pathArray, payload) {
     const key = pathToKey(pathArray);
     const baseEvent = { ...payload, path: pathArray, key };
@@ -82,6 +80,11 @@ export function createContractStore(contract, options = {}) {
     });
   }
 
+  /**
+   * Ensures that a subscription bucket exists for the provided key.
+   * @param {string} key
+   * @returns {Set<{callback: Function, exact: boolean}>}
+   */
   function ensureSubscriptionSet(key) {
     if (!subscribers.has(key)) {
       subscribers.set(key, new Set());
@@ -89,6 +92,13 @@ export function createContractStore(contract, options = {}) {
     return subscribers.get(key);
   }
 
+  /**
+   * Subscribes to updates for a given path.
+   * @param {string | string[]} [path]
+   * @param {(event: import("./types.js").SubscriptionEvent) => void} callback
+   * @param {{ exact?: boolean }} [opts]
+   * @returns {() => void}
+   */
   function subscribe(path, callback, opts = {}) {
     const { exact } = { ...DEFAULT_SUBSCRIBE_OPTIONS, ...opts };
     const normalized = normalizePath(path);
@@ -104,6 +114,11 @@ export function createContractStore(contract, options = {}) {
     };
   }
 
+  /**
+   * Wraps a Heimdall contract instance to intercept mutation methods.
+   * @param {any} instance
+   * @param {string[]} basePath
+   */
   function instrumentContract(instance, basePath) {
     if (!instance || "function" !== typeof instance.setValueAtPath) return;
     if (instrumentedContracts.has(instance)) return;
@@ -127,6 +142,12 @@ export function createContractStore(contract, options = {}) {
     };
   }
 
+  /**
+   * Recursively wraps nested objects, arrays and contract instances so they
+   * participate in change tracking.
+   * @param {unknown} value
+   * @param {string[]} path
+   */
   function captureNestedStructures(value, path) {
     if (Array.isArray(value)) {
       wrapArray(value, path);
@@ -157,11 +178,22 @@ export function createContractStore(contract, options = {}) {
     }
   }
 
+  /**
+   * Determines whether a candidate looks like a Heimdall contract instance.
+   * @param {unknown} candidate
+   * @returns {boolean}
+   */
   function isContractLike(candidate) {
     if (!candidate || "object" !== typeof candidate) return false;
     return "function" === typeof candidate.assign && "function" === typeof candidate.setValueAtPath;
   }
 
+  /**
+   * Makes sure that nested structures are wrapped with the appropriate proxy.
+   * @param {unknown} value
+   * @param {string[]} basePath
+   * @returns {unknown}
+   */
   function ensureInstrumented(value, basePath) {
     if (Array.isArray(value)) return wrapArray(value, basePath);
     if (isContractLike(value)) return wrapContract(value, basePath);
@@ -169,6 +201,12 @@ export function createContractStore(contract, options = {}) {
     return value;
   }
 
+  /**
+   * Creates a proxy around a contract instance.
+   * @param {any} instance
+   * @param {string[]} basePath
+   * @returns {any}
+   */
   function wrapContract(instance, basePath) {
     if (!instance || "object" !== typeof instance) return instance;
     if (contractProxyCache.has(instance)) return contractProxyCache.get(instance);
@@ -216,6 +254,12 @@ export function createContractStore(contract, options = {}) {
     return proxy;
   }
 
+  /**
+   * Creates a proxy around a plain object so assignments trigger notifications.
+   * @param {Record<string, unknown>} target
+   * @param {string[]} basePath
+   * @returns {Record<string, unknown>}
+   */
   function wrapPlainObject(target, basePath) {
     if (!target || "object" !== typeof target) return target;
     if (objectProxyCache.has(target)) return objectProxyCache.get(target);
@@ -260,6 +304,12 @@ export function createContractStore(contract, options = {}) {
     return proxy;
   }
 
+  /**
+   * Creates a proxy around an array so updates to its items trigger notifications.
+   * @param {unknown[]} target
+   * @param {string[]} basePath
+   * @returns {unknown[]}
+   */
   function wrapArray(target, basePath) {
     if (!Array.isArray(target)) return target;
 
@@ -324,12 +374,23 @@ export function createContractStore(contract, options = {}) {
   captureNestedStructures(contract, []);
   const proxiedContract = wrapContract(contract, []);
 
+  /**
+   * Retrieves a value from the proxied contract.
+   * @param {string | string[]} [path]
+   * @returns {unknown}
+   */
   function getValue(path) {
     const normalized = normalizePath(path);
     if (!normalized.length) return proxiedContract;
     return readAtPath(proxiedContract, normalized);
   }
 
+  /**
+   * Mutates the underlying contract at the specified path.
+   * @param {string | string[]} path
+   * @param {unknown} value
+   * @returns {unknown}
+   */
   function setValue(path, value) {
     const normalized = normalizePath(path);
     if (!normalized.length) throw new Error("setValue requires a non-empty path");
@@ -337,6 +398,11 @@ export function createContractStore(contract, options = {}) {
     return value;
   }
 
+  /**
+   * Returns the revision counter for the provided path.
+   * @param {string | string[]} [path]
+   * @returns {number}
+   */
   function getRevision(path) {
     const normalized = normalizePath(path);
     return revisions.get(pathToKey(normalized)) || 0;
