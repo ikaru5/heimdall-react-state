@@ -105,4 +105,27 @@ describe("useContractValue", () => {
 
     unmount();
   });
+
+  it("falls back to store.contract when getContract is unavailable", () => {
+    const listeners = new Set();
+    const store = {
+      contract: { profile: { firstName: "Ada" } },
+      subscribe: jest.fn((_, listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }),
+      getRevision: jest.fn(() => 0),
+    };
+
+    const { result } = renderHook(() => useContractValue(store, "profile.firstName"));
+
+    expect(result.current).toBe("Ada");
+
+    act(() => {
+      store.contract.profile.firstName = "Grace";
+      listeners.forEach((listener) => listener());
+    });
+
+    expect(result.current).toBe("Grace");
+  });
 });

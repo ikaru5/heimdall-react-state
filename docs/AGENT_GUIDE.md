@@ -33,6 +33,7 @@ eslint.config.js           # Flat ESLint configuration (ESLint 9, replaces .esli
 2. **Path-driven reactivity:** Every mutation must notify the relevant path and its ancestors via `emitChange`. New features must preserve this notification chain.
 3. **Stable proxies:** Object and array proxies are cached. When working on `wrap*` helpers, ensure identities remain per instance.
 4. **Concurrent-mode safe hooks:** All hooks rely on `useSyncExternalStore`. Extensions have to keep this pattern.
+5. **Absolute coverage:** Jest coverage must remain at 100% across statements, branches, lines, and functions. `istanbul ignore` directives are allowed only for defensive guards that cannot be triggered via public APIs (document the rationale inline). The pure type module `src/types.js` is excluded from coverage because it has no runtime behaviour to test.
 
 ## Change workflow
 
@@ -43,7 +44,7 @@ eslint.config.js           # Flat ESLint configuration (ESLint 9, replaces .esli
    - Stick to the existing utilities inside the `internal/` directory.
    - Add JSDoc types in `types.js` when needed to keep the API consistent.
 3. **Tests & quality assurance**
-   - Run `npm test` (coverage is based on Jest 30 with `coverageProvider: "v8"`).
+   - Run `npm test` (coverage is based on Jest 30 with `coverageProvider: "v8"`) and ensure all metrics report 100%.
    - Run `npm run lint` (ESLint 9 flat config in `eslint.config.js`) and `npm run format` to verify style and formatting.
    - Extend integration tests under `test/` when modifying hooks.
 4. **Documentation updates**

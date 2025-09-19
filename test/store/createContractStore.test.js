@@ -358,4 +358,77 @@ describe("createContractStore", () => {
     assignSpy.mockRestore();
     isValidSpy.mockRestore();
   });
+
+  it("deduplicates notifications when path segments collapse to the root", () => {
+    const contract = new ProjectContract();
+    contract.assign({
+      project: {},
+    });
+    const store = createContractStore(contract);
+
+    const rootListener = jest.fn();
+    const emptyKeyListener = jest.fn();
+
+    store.subscribe(undefined, rootListener);
+    store.subscribe("", emptyKeyListener);
+
+    store.contract[""] = { placeholder: true };
+
+    expect(rootListener).toHaveBeenCalledTimes(1);
+    expect(emptyKeyListener).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips instrumentation when setValueAtPath is not a function", () => {
+    const contract = { assign: jest.fn(), isValid: jest.fn(), setValueAtPath: null };
+    const store = createContractStore(contract);
+
+    expect(store.contract.setValueAtPath).toBeNull();
+
+    store.contract.placeholder = "value";
+    expect(contract.placeholder).toBe("value");
+  });
+
+  it("does not emit updates when patched setValueAtPath targets a foreign object", () => {
+    const assignValue = (target, segments, value) => {
+      if (!segments.length) {
+        return value;
+      }
+      const [head, ...rest] = segments;
+      if (rest.length === 0) {
+        target[head] = value;
+        return value;
+      }
+      if (!target[head] || typeof target[head] !== "object") {
+        target[head] = {};
+      }
+      return assignValue(target[head], rest, value);
+    };
+
+    const buildContract = () => {
+      const base = {};
+      base.assign = jest.fn();
+      base.isValid = jest.fn();
+      base.setValueAtPath = jest.fn((segments, value, target = base) =>
+        assignValue(target, segments, value),
+      );
+      return base;
+    };
+
+    const contract = buildContract();
+    const store = createContractStore(contract);
+    const listener = jest.fn();
+    store.subscribe("field", listener);
+
+    const foreignTarget = {};
+    contract.setValueAtPath(["field"], "external", foreignTarget);
+
+    expect(foreignTarget.field).toBe("external");
+    expect(contract.field).toBeUndefined();
+    expect(listener).not.toHaveBeenCalled();
+
+    contract.setValueAtPath(["field"], "internal");
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.getValue("field")).toBe("internal");
+  });
 });
