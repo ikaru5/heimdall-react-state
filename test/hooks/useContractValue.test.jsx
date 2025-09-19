@@ -1,4 +1,3 @@
-import React from "react";
 import { act } from "react";
 import { describe, expect, it, jest } from "@jest/globals";
 import { render, renderHook } from "@testing-library/react";
@@ -6,6 +5,7 @@ import { render, renderHook } from "@testing-library/react";
 import { createContractStore } from "../../src/createContractStore.js";
 import { useContractValue } from "../../src/hooks.js";
 import { ProfileContract } from "../helpers/contracts.js";
+import { silenceConsoleError } from "../helpers/silenceConsoleError.js";
 
 function ValueProbe({ store, path, options, onRender }) {
   const value = useContractValue(store, path, options);
@@ -15,9 +15,11 @@ function ValueProbe({ store, path, options, onRender }) {
 
 describe("useContractValue", () => {
   it("throws when store is invalid", () => {
-    expect(() => {
-      renderHook(() => useContractValue({}, "profile.firstName"));
-    }).toThrow(TypeError);
+    silenceConsoleError(() => {
+      expect(() => {
+        renderHook(() => useContractValue({}, "profile.firstName"));
+      }).toThrow(TypeError);
+    });
   });
 
   it("returns values at the provided path and applies equality checks", async () => {

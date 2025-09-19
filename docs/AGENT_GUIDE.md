@@ -20,6 +20,7 @@ docs/
   AGENT_GUIDE.md           # Diese Datei
   architecture-overview.md # Architektur- und Designübersicht
 README.md                  # Nutzer:innen-Doku mit Quickstart und API
+eslint.config.js           # Flat ESLint-Konfiguration (ESLint 9, ersetzt .eslintrc)
 ```
 > **Wenn neue zentrale Dateien oder Ordner entstehen**, sind sie hier einzutragen und kurz zu beschreiben.
 
@@ -37,8 +38,8 @@ README.md                  # Nutzer:innen-Doku mit Quickstart und API
    - Halte dich an die existierenden Utility-Funktionen im `internal/`-Verzeichnis.
    - Ergänze bei Bedarf JSDoc-Typen in `types.js`, damit die API konsistent bleibt.
 3. **Tests & Qualitätssicherung**
-   - `npm test` ausführen (liefert automatisch Coverage).
-   - `npm run lint` und `npm run format` prüfen Style & Formatierung.
+   - `npm test` ausführen (Coverage basiert auf Jest 30 mit `coverageProvider: "v8"`).
+   - `npm run lint` (ESLint 9 Flat Config in `eslint.config.js`) und `npm run format` prüfen Style & Formatierung.
    - Bei Anpassungen an Hooks Integrationstests unter `test/` erweitern.
 4. **Dokumentation anpassen**
    - README für Nutzer:innen, diese Agenten-Doku für Prozesswissen, `architecture-overview.md` für technische Entscheidungen.
@@ -54,7 +55,7 @@ README.md                  # Nutzer:innen-Doku mit Quickstart und API
 - Neue Verzeichnisse, bedeutende Dateien oder Build-Schritte.
 - Änderungen an Test- oder Lint-Workflows.
 - Erkenntnisse über häufige Bugs oder Workarounds.
-- Deprecations oder Breaking Changes in `heimdall-contract`.
+- Deprecations oder Breaking Changes in `heimdall-contract` **oder zentralen Tooling-Abhängigkeiten** (z. B. aktualisierte ESLint/Jest-Versionen, neue Overrides in `package.json`).
 
 ## Kontaktpunkte / Weiterführende Ressourcen
 - `docs/architecture-overview.md` für aktuelle Architektur.

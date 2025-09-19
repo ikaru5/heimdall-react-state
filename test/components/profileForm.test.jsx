@@ -1,4 +1,3 @@
-import React from "react";
 import { act } from "react";
 import { describe, expect, it } from "@jest/globals";
 import { fireEvent, render, screen } from "@testing-library/react";

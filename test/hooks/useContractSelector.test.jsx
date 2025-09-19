@@ -1,4 +1,3 @@
-import React from "react";
 import { act } from "react";
 import { describe, expect, it, jest } from "@jest/globals";
 import { render, renderHook } from "@testing-library/react";
@@ -6,6 +5,7 @@ import { render, renderHook } from "@testing-library/react";
 import { createContractStore } from "../../src/createContractStore.js";
 import { useContractSelector } from "../../src/hooks.js";
 import { ProfileContract } from "../helpers/contracts.js";
+import { silenceConsoleError } from "../helpers/silenceConsoleError.js";
 
 function SelectorProbe({ store, selector, options, onRender }) {
   const value = useContractSelector(store, selector, options);
@@ -15,9 +15,11 @@ function SelectorProbe({ store, selector, options, onRender }) {
 
 describe("useContractSelector", () => {
   it("throws when provided store is invalid", () => {
-    expect(() => {
-      renderHook(() => useContractSelector({}, () => 1));
-    }).toThrow(TypeError);
+    silenceConsoleError(() => {
+      expect(() => {
+        renderHook(() => useContractSelector({}, () => 1));
+      }).toThrow(TypeError);
+    });
   });
 
   it("requires selector to be a function", () => {
@@ -27,9 +29,11 @@ describe("useContractSelector", () => {
     });
     const store = createContractStore(contract);
 
-    expect(() => {
-      renderHook(() => useContractSelector(store, /** @type {any} */ ("not-a-function")));
-    }).toThrow(TypeError);
+    silenceConsoleError(() => {
+      expect(() => {
+        renderHook(() => useContractSelector(store, /** @type {any} */ ("not-a-function")));
+      }).toThrow(TypeError);
+    });
   });
 
   it("subscribes to derived values and applies custom equality checks", async () => {
