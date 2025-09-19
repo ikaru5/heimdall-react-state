@@ -1,6 +1,7 @@
 const config = {
   collectCoverageFrom: ["src/**/*.js"],
   coveragePathIgnorePatterns: ["/node_modules/"],
+  coverageReporters: ["text", "lcov", "clover", "json-summary"],
   coverageThreshold: {
     global: {
       branches: 90,
