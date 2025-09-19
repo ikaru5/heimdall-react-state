@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import Contract from "@ikaru5/heimdall-contract";
 import React from "react";
 import TestRenderer from "react-test-renderer";
 
@@ -8,44 +9,41 @@ import { useContract, useContractSelector, useContractValue } from "../src/hooks
 
 const { act } = TestRenderer;
 
-class TestContract {
-  constructor(initial = {}) {
-    this.schema = {};
-    this.assign(initial);
-  }
-
-  assign(update = {}) {
-    Object.keys(update).forEach((key) => {
-      this[key] = update[key];
-    });
-    return this;
-  }
-
-  setValueAtPath(path, value, object = this) {
-    if (!Array.isArray(path)) {
-      throw new TypeError("path must be an array");
-    }
-    if (path.length === 0) {
-      throw new Error("path must not be empty");
-    }
-    const [segment, ...rest] = path;
-    if (rest.length === 0) {
-      object[segment] = value;
-      return value;
-    }
-    if (object[segment] === undefined || object[segment] === null) {
-      object[segment] = {};
-    }
-    return this.setValueAtPath(rest, value, object[segment]);
-  }
-
-  isValid() {
-    return true;
-  }
+function createContractInstance(schema, initial = {}) {
+  const contract = new Contract({ schema });
+  contract.assign(initial);
+  return contract;
 }
 
+const PROFILE_SCHEMA = {
+  profile: {
+    dType: "Contract",
+    contract: {
+      firstName: { dType: "String" },
+      lastName: { dType: "String" },
+    },
+  },
+};
+
+const ADDRESS_SCHEMA = {
+  address: {
+    dType: "Contract",
+    contract: {
+      city: { dType: "String" },
+      zip: { dType: "String" },
+    },
+  },
+  country: { dType: "String" },
+};
+
+const createProfileContract = (initial = {}) =>
+  createContractInstance(PROFILE_SCHEMA, initial);
+
+const createAddressContract = (initial = {}) =>
+  createContractInstance(ADDRESS_SCHEMA, initial);
+
 test("useContractValue re-renders only the subscribed component", async () => {
-  const contract = new TestContract({
+  const contract = createProfileContract({
     profile: {
       firstName: "Ada",
       lastName: "Lovelace",
@@ -111,12 +109,11 @@ test("useContractValue re-renders only the subscribed component", async () => {
 });
 
 test("useContractValue tracks nested contract segments", async () => {
-  const nested = new TestContract({
-    city: "Paris",
-    zip: "75000",
-  });
-  const contract = new TestContract({
-    address: nested,
+  const contract = createAddressContract({
+    address: {
+      city: "Paris",
+      zip: "75000",
+    },
     country: "FR",
   });
   const store = createContractStore(contract);
@@ -157,7 +154,7 @@ test("useContractValue tracks nested contract segments", async () => {
 });
 
 test("useContractSelector recomputes derived data", async () => {
-  const contract = new TestContract({
+  const contract = createProfileContract({
     profile: {
       firstName: "Ada",
       lastName: "Lovelace",
@@ -199,7 +196,7 @@ test("useContractSelector recomputes derived data", async () => {
 });
 
 test("useContract provides a live contract reference", async () => {
-  const contract = new TestContract({
+  const contract = createProfileContract({
     profile: {
       firstName: "Ada",
       lastName: "Lovelace",
