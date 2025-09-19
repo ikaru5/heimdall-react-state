@@ -3,7 +3,7 @@ import { describe, expect, it, jest } from "@jest/globals";
 import { render, renderHook } from "@testing-library/react";
 
 import { createContractStore } from "../../src/createContractStore.js";
-import { useContractSelector } from "../../src/hooks.js";
+import { __HOOK_INTERNALS__, useContractSelector } from "../../src/hooks.js";
 import { ProfileContract } from "../helpers/contracts.js";
 import { silenceConsoleError } from "../helpers/silenceConsoleError.js";
 
@@ -76,5 +76,35 @@ describe("useContractSelector", () => {
     expect(equalityFn).toHaveBeenCalled();
 
     unmount();
+  });
+
+  it("falls back to the contract property when getContract is missing", () => {
+    const listeners = new Set();
+    const store = {
+      contract: { status: "initial" },
+      subscribe: jest.fn((_, listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }),
+      getRevision: jest.fn(() => 0),
+    };
+    const selector = jest.fn((contract) => contract.status);
+
+    const { result } = renderHook(() => useContractSelector(store, selector));
+
+    expect(result.current).toBe("initial");
+
+    act(() => {
+      store.contract.status = "next";
+      listeners.forEach((listener) => listener());
+    });
+
+    expect(result.current).toBe("next");
+    expect(selector).toHaveBeenCalledWith(store.contract);
+  });
+
+  it("returns undefined when no store instance is provided", () => {
+    const { getContractProxy } = __HOOK_INTERNALS__;
+    expect(getContractProxy(undefined)).toBeUndefined();
   });
 });

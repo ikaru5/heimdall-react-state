@@ -123,3 +123,5 @@ export const useContract = (store) => {
     return getContractProxy(store);
   }, [store, revision]);
 };
+
+export const __HOOK_INTERNALS__ = { getContractProxy };

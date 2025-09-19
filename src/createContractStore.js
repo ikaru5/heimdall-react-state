@@ -208,7 +208,6 @@ export function createContractStore(contract, options = {}) {
    * @returns {any}
    */
   function wrapContract(instance, basePath) {
-    if (!instance || "object" !== typeof instance) return instance;
     if (contractProxyCache.has(instance)) return contractProxyCache.get(instance);
 
     instrumentContract(instance, basePath);
@@ -261,7 +260,6 @@ export function createContractStore(contract, options = {}) {
    * @returns {Record<string, unknown>}
    */
   function wrapPlainObject(target, basePath) {
-    if (!target || "object" !== typeof target) return target;
     if (objectProxyCache.has(target)) return objectProxyCache.get(target);
 
     const proxy = new Proxy(target, {
@@ -311,8 +309,6 @@ export function createContractStore(contract, options = {}) {
    * @returns {unknown[]}
    */
   function wrapArray(target, basePath) {
-    if (!Array.isArray(target)) return target;
-
     target.forEach((entry, index) => {
       const nestedPath = basePath.concat(toPathSegment(index));
       captureNestedStructures(entry, nestedPath);

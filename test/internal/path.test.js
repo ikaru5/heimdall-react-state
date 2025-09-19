@@ -39,6 +39,8 @@ describe("internal/path utilities", () => {
     expect(readAtPath(target, [])).toBe(target);
     expect(readAtPath(target, ["profile", "firstName"])).toBe("Ada");
     expect(readAtPath(target, ["profile", "missing"])).toBeUndefined();
+    target.nullish = null;
+    expect(readAtPath(target, ["nullish", "value"])).toBeNull();
   });
 
   it("visits each ancestor when traversing", () => {
