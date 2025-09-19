@@ -5,7 +5,7 @@ import { render, renderHook } from "@testing-library/react";
 
 import { createContractStore } from "../../src/createContractStore.js";
 import { useContractSelector } from "../../src/hooks.js";
-import { createProfileContract } from "../helpers/contracts.js";
+import { ProfileContract } from "../helpers/contracts.js";
 
 function SelectorProbe({ store, selector, options, onRender }) {
   const value = useContractSelector(store, selector, options);
@@ -21,7 +21,8 @@ describe("useContractSelector", () => {
   });
 
   it("requires selector to be a function", () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
@@ -32,7 +33,8 @@ describe("useContractSelector", () => {
   });
 
   it("subscribes to derived values and applies custom equality checks", async () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
