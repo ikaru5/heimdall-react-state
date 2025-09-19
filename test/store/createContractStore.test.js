@@ -51,7 +51,9 @@ describe("createContractStore", () => {
 
     const unsubscribeFirst = store.subscribe("profile.firstName", firstNameListener);
     const unsubscribeProfile = store.subscribe("profile", profileListener);
-    const unsubscribeExactProfile = store.subscribe("profile", exactProfileListener, { exact: true });
+    const unsubscribeExactProfile = store.subscribe("profile", exactProfileListener, {
+      exact: true,
+    });
 
     store.contract.profile.firstName = "Grace";
     store.contract.profile.lastName = "Hopper";

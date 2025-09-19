@@ -3,11 +3,13 @@
 > ⚠️ **Pflicht zur Pflege:** Diese Agentendokumentation muss automatisch aktualisiert werden, sobald der Agent relevante neue Erkenntnisse gewinnt oder Änderungen vornimmt, die bestehende Informationen betreffen. Jede Änderung am Code, am Build-Prozess oder an zentralen Abhängigkeiten ist sofort hier einzupflegen.
 
 ## Ziel und Kontext
+
 - **Paketname:** `@ikaru5/heimdall-react-state` – React-Bindings rund um `heimdall-contract`.
 - **Rolle der Agenten:** Wartung, Qualitätssicherung und Erweiterung der Bibliothek sowie der Dokumentation.
 - **Wichtige Werte:** Stabilität, feingranulare Aktualisierung von React-Komponenten, strenge Testabdeckung.
 
 ## Projektstruktur (Stand jetzt)
+
 ```
 src/
   createContractStore.js   # Kern: Observable-Store-Layer rund um Contracts
@@ -22,15 +24,18 @@ docs/
 README.md                  # Nutzer:innen-Doku mit Quickstart und API
 eslint.config.js           # Flat ESLint-Konfiguration (ESLint 9, ersetzt .eslintrc)
 ```
+
 > **Wenn neue zentrale Dateien oder Ordner entstehen**, sind sie hier einzutragen und kurz zu beschreiben.
 
 ## Kernkonzepte, die nicht verletzt werden dürfen
+
 1. **Vertrauen in `heimdall-contract`:** Keine direkten Änderungen an dessen internem Zustand außerhalb der öffentlichen API (`assign`, `setValueAtPath`, etc.).
 2. **Pfadbasierte Reaktivität:** Jede Mutation muss über `emitChange` den passenden Pfad und dessen Ahnen informieren. Neue Features dürfen diese Benachrichtigungskette nicht brechen.
 3. **Proxys bleiben stabil:** Objekt- und Array-Proxys werden gecacht. Beim Arbeiten an `wrap*`-Hilfsfunktionen unbedingt darauf achten, dass Identitäten pro Instanz bestehen bleiben.
 4. **Hooks sind Concurrent-Mode-sicher:** Alle Hooks nutzen `useSyncExternalStore`. Erweiterungen müssen dieses Muster beibehalten.
 
 ## Arbeitsablauf für Änderungen
+
 1. **Analyse & Design**
    - Prüfe zuerst `docs/architecture-overview.md` sowie die Tests unter `test/`.
    - Überprüfe, ob bestehende Patterns wiederverwendet werden können.
@@ -46,18 +51,21 @@ eslint.config.js           # Flat ESLint-Konfiguration (ESLint 9, ersetzt .eslin
    - Jede veränderte Beobachtung oder neue Abhängigkeit **sofort** dokumentieren.
 
 ## Typische Fehlerquellen & Checks
+
 - **Vergessene Instrumentierung**: Neue Mutationswege (z. B. zusätzliche Contract-Methoden) müssen `emitChange` auslösen.
 - **Array-Operationen**: Nutze die vorhandene Liste `MUTATING_ARRAY_METHODS`, wenn neue Methoden hinzukommen.
 - **Speicherlecks**: Beim Hinzufügen neuer Caches immer WeakMap/WeakSet einsetzen, um Contracts freizugeben.
 - **Subscriptions**: Beim Erweitern von `subscribe`-Optionen daran denken, die `unsubscribe`-Logik zu aktualisieren.
 
 ## Wann diese Datei aktualisiert werden muss
+
 - Neue Verzeichnisse, bedeutende Dateien oder Build-Schritte.
 - Änderungen an Test- oder Lint-Workflows.
 - Erkenntnisse über häufige Bugs oder Workarounds.
 - Deprecations oder Breaking Changes in `heimdall-contract` **oder zentralen Tooling-Abhängigkeiten** (z. B. aktualisierte ESLint/Jest-Versionen, neue Overrides in `package.json`).
 
 ## Kontaktpunkte / Weiterführende Ressourcen
+
 - `docs/architecture-overview.md` für aktuelle Architektur.
 - Tests im Ordner `test/` als lebende Spezifikation.
 - README für API-Beispiele, die mit Code synchron gehalten werden müssen.
@@ -67,14 +75,17 @@ eslint.config.js           # Flat ESLint-Konfiguration (ESLint 9, ersetzt .eslin
 ## Git Commit Message Style Guide
 
 ### Format
+
 All commit messages must follow: `[TYPE] brief description in lowercase`
 
 ### Types
+
 - **`[FEATURE]`** - New functionality, enhancements, or additions
 - **`[BUGFIX]`** - Bug fixes, error corrections, or issue resolutions
 - **`[TASK]`** - Maintenance work, documentation updates, configuration changes, or housekeeping
 
 ### Rules
+
 - Use lowercase after the prefix
 - Use imperative mood (e.g., "add", "fix", "update")
 - Keep messages concise but descriptive

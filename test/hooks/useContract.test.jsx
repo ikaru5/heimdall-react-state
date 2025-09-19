@@ -30,7 +30,9 @@ describe("useContract", () => {
     const store = createContractStore(contract);
     const renders = [];
 
-    const { unmount } = render(<ContractProbe store={store} onRender={(value) => renders.push(value)} />);
+    const { unmount } = render(
+      <ContractProbe store={store} onRender={(value) => renders.push(value)} />,
+    );
 
     expect(renders).toHaveLength(1);
     const firstRenderContract = renders[0];
