@@ -9,6 +9,7 @@ const config = {
       statements: 90,
     },
   },
+  coverageProvider: "v8",
   extensionsToTreatAsEsm: [".jsx"],
   setupFilesAfterEnv: ["<rootDir>/test/setupTests.js"],
   testEnvironment: "jsdom",

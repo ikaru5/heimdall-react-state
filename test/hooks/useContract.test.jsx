@@ -1,4 +1,3 @@
-import React from "react";
 import { act } from "react";
 import { describe, expect, it } from "@jest/globals";
 import { render, renderHook } from "@testing-library/react";
@@ -6,6 +5,7 @@ import { render, renderHook } from "@testing-library/react";
 import { createContractStore } from "../../src/createContractStore.js";
 import { useContract } from "../../src/hooks.js";
 import { ProfileContract } from "../helpers/contracts.js";
+import { silenceConsoleError } from "../helpers/silenceConsoleError.js";
 
 function ContractProbe({ store, onRender }) {
   const contract = useContract(store);
@@ -15,9 +15,11 @@ function ContractProbe({ store, onRender }) {
 
 describe("useContract", () => {
   it("throws when the store is invalid", () => {
-    expect(() => {
-      renderHook(() => useContract({}));
-    }).toThrow(TypeError);
+    silenceConsoleError(() => {
+      expect(() => {
+        renderHook(() => useContract({}));
+      }).toThrow(TypeError);
+    });
   });
 
   it("returns the proxied contract and re-renders on revisions", async () => {
