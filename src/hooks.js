@@ -1,8 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useSyncExternalStore } from "react";
-import { __INTERNALS__ } from "./createContractStore.js";
 
-const { normalizePath, pathToKey, readAtPath } = __INTERNALS__;
+import { normalizePath, pathToKey, readAtPath } from "./internal/path.js";
 
 const STORE_ERROR = "requires a store created by createContractStore";
 
@@ -19,6 +18,15 @@ const assertValidStore = (store, hookName) => {
   }
 };
 
+/**
+ * Subscribes to the result of a selector that receives the proxied contract instance.
+ *
+ * @template T
+ * @param {import("./types.js").ContractStore} store
+ * @param {(contract: any) => T} selector
+ * @param {{ equalityFn?: (previous: T, next: T) => boolean }} [options]
+ * @returns {T}
+ */
 export const useContractSelector = (store, selector, options = {}) => {
   assertValidStore(store, "useContractSelector");
   if ("function" !== typeof selector) throw new TypeError("selector must be a function");
@@ -32,10 +40,13 @@ export const useContractSelector = (store, selector, options = {}) => {
       return store.subscribe(undefined, () => {
         const nextValue = selector(getContractProxy(store));
         const nextRevision = store.getRevision();
-        if (nextRevision !== previousRevision || !equalityFn(previousValue, nextValue)) {
+        const valuesEqual = equalityFn(previousValue, nextValue);
+        if (nextRevision !== previousRevision || !valuesEqual) {
           previousRevision = nextRevision;
           previousValue = nextValue;
-          onStoreChange();
+          if (!valuesEqual) {
+            onStoreChange();
+          }
         }
       });
     },
@@ -47,6 +58,18 @@ export const useContractSelector = (store, selector, options = {}) => {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
+/**
+ * Reads a value from the contract at the provided path and subscribes to updates.
+ *
+ * @template T
+ * @param {import("./types.js").ContractStore} store
+ * @param {string | string[]} path
+ * @param {{
+ *   exact?: boolean;
+ *   equalityFn?: (previous: T, next: T) => boolean;
+ * }} [options]
+ * @returns {T}
+ */
 export const useContractValue = (store, path, options = {}) => {
   assertValidStore(store, "useContractValue");
 
@@ -69,10 +92,13 @@ export const useContractValue = (store, path, options = {}) => {
         () => {
           const nextValue = readAtPath(getContractProxy(store), normalizedPath);
           const nextRevision = store.getRevision(pathKey);
-          if (nextRevision !== previousRevision || !equalityFn(previousValue, nextValue)) {
+          const valuesEqual = equalityFn(previousValue, nextValue);
+          if (nextRevision !== previousRevision || !valuesEqual) {
             previousRevision = nextRevision;
             previousValue = nextValue;
-            onStoreChange();
+            if (!valuesEqual) {
+              onStoreChange();
+            }
           }
         },
         { exact },
@@ -84,6 +110,11 @@ export const useContractValue = (store, path, options = {}) => {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
+/**
+ * Returns the proxied contract and re-renders whenever it changes.
+ * @param {import("./types.js").ContractStore} store
+ * @returns {any}
+ */
 export const useContract = (store) => {
   assertValidStore(store, "useContract");
   const revision = useContractSelector(store, () => store.getRevision());

@@ -9,18 +9,13 @@ import { useContract, useContractSelector, useContractValue } from "../src/hooks
 
 const { act } = TestRenderer;
 
-function createContractInstance(schema, initial = {}) {
-  const contract = new Contract({ schema });
-  contract.assign(initial);
-  return contract;
-}
-
 const PROFILE_SCHEMA = {
   profile: {
     dType: "Contract",
     contract: {
       firstName: { dType: "String" },
       lastName: { dType: "String" },
+      bio: { dType: "String" },
     },
   },
 };
@@ -29,6 +24,7 @@ const ADDRESS_SCHEMA = {
   address: {
     dType: "Contract",
     contract: {
+      street: { dType: "String" },
       city: { dType: "String" },
       zip: { dType: "String" },
     },
@@ -36,81 +32,110 @@ const ADDRESS_SCHEMA = {
   country: { dType: "String" },
 };
 
-const createProfileContract = (initial = {}) =>
-  createContractInstance(PROFILE_SCHEMA, initial);
+function createContractInstance(schema, initial = {}) {
+  const contract = new Contract({ schema });
+  contract.assign(initial);
+  return contract;
+}
 
-const createAddressContract = (initial = {}) =>
-  createContractInstance(ADDRESS_SCHEMA, initial);
+const createProfileContract = (initial = {}) => createContractInstance(PROFILE_SCHEMA, initial);
+const createAddressContract = (initial = {}) => createContractInstance(ADDRESS_SCHEMA, initial);
 
-test("useContractValue re-renders only the subscribed component", async () => {
+test("profile form rerenders only impacted components", async () => {
   const contract = createProfileContract({
     profile: {
       firstName: "Ada",
       lastName: "Lovelace",
+      bio: "Pioneer of computer programming.",
     },
   });
   const store = createContractStore(contract);
 
-  const renders = {
-    first: [],
-    last: [],
+  const renderLog = {
+    firstName: [],
+    lastName: [],
+    summary: [],
   };
 
-  function FirstName() {
-    const value = useContractValue(store, "profile.firstName");
-    renders.first.push(value);
-    return React.createElement("span", null, value);
-  }
-
-  function LastName() {
-    const value = useContractValue(store, "profile.lastName");
-    renders.last.push(value);
-    return React.createElement("span", null, value);
-  }
-
-  function App() {
+  const ProfileField = React.memo(function ProfileField({ label, path, logKey }) {
+    const value = useContractValue(store, path);
+    renderLog[logKey].push(value);
     return React.createElement(
-      React.Fragment,
-      null,
-      React.createElement(FirstName),
-      React.createElement(LastName),
+      "label",
+      { className: "field" },
+      `${label}: `,
+      React.createElement("span", { className: "field__value" }, value),
+    );
+  });
+
+  const ProfileSummary = React.memo(function ProfileSummary() {
+    const summary = useContractSelector(
+      store,
+      (current) => `${current.profile.firstName} ${current.profile.lastName}`,
+    );
+    renderLog.summary.push(summary);
+    return React.createElement("p", { className: "summary" }, summary);
+  });
+
+  function ProfileForm() {
+    return React.createElement(
+      "section",
+      { className: "profile" },
+      React.createElement(ProfileField, {
+        key: "first",
+        label: "First name",
+        path: "profile.firstName",
+        logKey: "firstName",
+      }),
+      React.createElement(ProfileField, {
+        key: "last",
+        label: "Last name",
+        path: "profile.lastName",
+        logKey: "lastName",
+      }),
+      React.createElement(ProfileSummary, { key: "summary" }),
     );
   }
 
   let renderer;
   await act(() => {
-    renderer = TestRenderer.create(React.createElement(App));
+    renderer = TestRenderer.create(React.createElement(ProfileForm));
   });
 
-  assert.deepEqual(renders.first, ["Ada"]);
-  assert.deepEqual(renders.last, ["Lovelace"]);
+  assert.deepEqual(renderLog.firstName, ["Ada"]);
+  assert.deepEqual(renderLog.lastName, ["Lovelace"]);
+  assert.deepEqual(renderLog.summary, ["Ada Lovelace"]);
 
   await act(() => {
     store.contract.profile.firstName = "Ada";
   });
-  assert.deepEqual(renders.first, ["Ada"]);
-  assert.deepEqual(renders.last, ["Lovelace"]);
+  assert.deepEqual(renderLog.firstName, ["Ada"]);
+  assert.deepEqual(renderLog.lastName, ["Lovelace"]);
+  assert.deepEqual(renderLog.summary, ["Ada Lovelace"]);
 
   await act(() => {
     store.contract.profile.firstName = "Grace";
   });
-  assert.deepEqual(renders.first, ["Ada", "Grace"]);
-  assert.deepEqual(renders.last, ["Lovelace"]);
+  assert.deepEqual(renderLog.firstName, ["Ada", "Grace"]);
+  assert.deepEqual(renderLog.lastName, ["Lovelace"]);
+  assert.deepEqual(renderLog.summary, ["Ada Lovelace", "Grace Lovelace"]);
 
   await act(() => {
     store.contract.profile.lastName = "Hopper";
   });
-  assert.deepEqual(renders.first, ["Ada", "Grace"]);
-  assert.deepEqual(renders.last, ["Lovelace", "Hopper"]);
+  assert.deepEqual(renderLog.firstName, ["Ada", "Grace"]);
+  assert.deepEqual(renderLog.lastName, ["Lovelace", "Hopper"]);
+  assert.deepEqual(renderLog.summary, ["Ada Lovelace", "Grace Lovelace", "Grace Hopper"]);
 
   await act(() => {
     renderer.unmount();
   });
 });
 
-test("useContractValue tracks nested contract segments", async () => {
+test("nested contract subscribers receive only relevant updates", async () => {
   const contract = createAddressContract({
     address: {
+      street: "42 Rue de Something",
       city: "Paris",
       zip: "75000",
     },
@@ -118,116 +143,155 @@ test("useContractValue tracks nested contract segments", async () => {
   });
   const store = createContractStore(contract);
 
-  const seenCities = [];
+  const renderLog = {
+    street: [],
+    city: [],
+    zip: [],
+  };
 
-  function City() {
-    const city = useContractValue(store, "address.city");
-    seenCities.push(city);
-    return React.createElement("span", null, city);
+  const AddressLine = React.memo(function AddressLine({ path, logKey }) {
+    const value = useContractValue(store, path);
+    renderLog[logKey].push(value);
+    return React.createElement("span", { className: `address__${logKey}` }, value);
+  });
+
+  function AddressCard() {
+    return React.createElement(
+      "article",
+      { className: "address-card" },
+      React.createElement(AddressLine, { key: "street", path: "address.street", logKey: "street" }),
+      React.createElement(AddressLine, { key: "city", path: "address.city", logKey: "city" }),
+      React.createElement(AddressLine, { key: "zip", path: "address.zip", logKey: "zip" }),
+    );
   }
 
   let renderer;
   await act(() => {
-    renderer = TestRenderer.create(React.createElement(City));
+    renderer = TestRenderer.create(React.createElement(AddressCard));
   });
 
-  assert.deepEqual(seenCities, ["Paris"]);
-
-  await act(() => {
-    store.contract.address.city = "Paris";
-  });
-  assert.deepEqual(seenCities, ["Paris"]);
+  assert.deepEqual(renderLog.street, ["42 Rue de Something"]);
+  assert.deepEqual(renderLog.city, ["Paris"]);
+  assert.deepEqual(renderLog.zip, ["75000"]);
 
   await act(() => {
     store.contract.address.city = "Berlin";
   });
-  assert.deepEqual(seenCities, ["Paris", "Berlin"]);
+  assert.deepEqual(renderLog.street, ["42 Rue de Something"]);
+  assert.deepEqual(renderLog.city, ["Paris", "Berlin"]);
+  assert.deepEqual(renderLog.zip, ["75000"]);
 
   await act(() => {
     store.contract.country = "DE";
   });
-  assert.deepEqual(seenCities, ["Paris", "Berlin"]);
+  assert.deepEqual(renderLog.street, ["42 Rue de Something"]);
+  assert.deepEqual(renderLog.city, ["Paris", "Berlin"]);
+  assert.deepEqual(renderLog.zip, ["75000"]);
+
+  await act(() => {
+    store.contract.address.zip = "10115";
+  });
+  assert.deepEqual(renderLog.street, ["42 Rue de Something"]);
+  assert.deepEqual(renderLog.city, ["Paris", "Berlin"]);
+  assert.deepEqual(renderLog.zip, ["75000", "10115"]);
 
   await act(() => {
     renderer.unmount();
   });
 });
 
-test("useContractSelector recomputes derived data", async () => {
+test("selectors support custom equality checks to avoid unnecessary renders", async () => {
   const contract = createProfileContract({
     profile: {
       firstName: "Ada",
       lastName: "Lovelace",
+      bio: "Pioneer of computer programming.",
     },
   });
   const store = createContractStore(contract);
 
   const selections = [];
 
-  function FullName() {
-    const fullName = useContractSelector(
+  const caseInsensitiveEquality = (prev, next) => prev.toLowerCase() === next.toLowerCase();
+
+  function PreferredName() {
+    const selection = useContractSelector(
       store,
-      (current) => `${current.profile.firstName} ${current.profile.lastName}`,
+      (current) => current.profile.firstName,
+      { equalityFn: caseInsensitiveEquality },
     );
-    selections.push(fullName);
-    return React.createElement("span", null, fullName);
+    selections.push(selection);
+    return React.createElement("strong", null, selection);
   }
 
   let renderer;
   await act(() => {
-    renderer = TestRenderer.create(React.createElement(FullName));
+    renderer = TestRenderer.create(React.createElement(PreferredName));
   });
 
-  assert.deepEqual(selections, ["Ada Lovelace"]);
+  assert.deepEqual(selections, ["Ada"]);
+
+  await act(() => {
+    store.contract.profile.lastName = "Byron";
+  });
+  assert.deepEqual(selections, ["Ada"]);
+
+  await act(() => {
+    store.contract.profile.firstName = "ADA";
+  });
+  assert.deepEqual(selections, ["Ada"]);
 
   await act(() => {
     store.contract.profile.firstName = "Grace";
   });
-  assert.deepEqual(selections, ["Ada Lovelace", "Grace Lovelace"]);
-
-  await act(() => {
-    store.contract.profile.lastName = "Hopper";
-  });
-  assert.deepEqual(selections, ["Ada Lovelace", "Grace Lovelace", "Grace Hopper"]);
+  assert.deepEqual(selections, ["Ada", "Grace"]);
 
   await act(() => {
     renderer.unmount();
   });
 });
 
-test("useContract provides a live contract reference", async () => {
+test("useContract returns a live contract reference", async () => {
   const contract = createProfileContract({
     profile: {
       firstName: "Ada",
       lastName: "Lovelace",
+      bio: "Pioneer of computer programming.",
     },
   });
   const store = createContractStore(contract);
 
   const observed = [];
 
-  function Consumer() {
+  function Biography() {
     const current = useContract(store);
-    observed.push(current.profile.firstName);
-    return React.createElement("span", null, current.profile.firstName);
+    observed.push(current.profile.bio);
+    return React.createElement("p", null, current.profile.bio);
   }
 
   let renderer;
   await act(() => {
-    renderer = TestRenderer.create(React.createElement(Consumer));
+    renderer = TestRenderer.create(React.createElement(Biography));
   });
 
-  assert.deepEqual(observed, ["Ada"]);
-
-  await act(() => {
-    store.setValue("profile.firstName", "Grace");
-  });
-  assert.deepEqual(observed, ["Ada", "Grace"]);
+  assert.deepEqual(observed, ["Pioneer of computer programming."]);
 
   await act(() => {
-    store.contract.profile.firstName = "Katherine";
+    store.setValue("profile.bio", "Developed the first computer algorithm.");
   });
-  assert.deepEqual(observed, ["Ada", "Grace", "Katherine"]);
+  assert.deepEqual(observed, [
+    "Pioneer of computer programming.",
+    "Developed the first computer algorithm.",
+  ]);
+
+  await act(() => {
+    store.contract.profile.bio = "Rear Admiral and computer scientist.";
+  });
+  assert.deepEqual(observed, [
+    "Pioneer of computer programming.",
+    "Developed the first computer algorithm.",
+    "Rear Admiral and computer scientist.",
+  ]);
 
   await act(() => {
     renderer.unmount();
