@@ -1,13 +1,9 @@
 import { describe, expect, it, jest } from "@jest/globals";
+import Contract from "@ikaru5/heimdall-contract";
 
 import { createContractStore } from "../../src/createContractStore.js";
 import { RAW_SYMBOL } from "../../src/internal/path.js";
-import {
-  createAddressContract,
-  createContractInstance,
-  createProfileContract,
-  createProjectContract,
-} from "../helpers/contracts.js";
+import { AddressContract, ProfileContract, ProjectContract } from "../helpers/contracts.js";
 
 describe("createContractStore", () => {
   it("throws when provided value is not a contract", () => {
@@ -15,7 +11,8 @@ describe("createContractStore", () => {
   });
 
   it("exposes proxied and original contracts", () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
@@ -28,7 +25,8 @@ describe("createContractStore", () => {
   });
 
   it("delegates mutations through setValue", () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
@@ -41,7 +39,8 @@ describe("createContractStore", () => {
   });
 
   it("notifies subscribers and respects exact flag", () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
@@ -73,7 +72,8 @@ describe("createContractStore", () => {
   });
 
   it("tracks revisions per path", () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
@@ -90,7 +90,8 @@ describe("createContractStore", () => {
   });
 
   it("forwards updates to the optional onUpdate hook", () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const onUpdate = jest.fn();
@@ -110,7 +111,8 @@ describe("createContractStore", () => {
   });
 
   it("reacts to array mutations and reassignments", () => {
-    const contract = createProjectContract({
+    const contract = new ProjectContract();
+    contract.assign({
       project: { tasks: ["initial"], metadata: { owner: "Ada" } },
     });
     const store = createContractStore(contract);
@@ -147,7 +149,13 @@ describe("createContractStore", () => {
         },
       },
     };
-    const contract = createContractInstance(dynamicSchema, {
+    class CompanyContract extends Contract {
+      defineSchema() {
+        return dynamicSchema;
+      }
+    }
+    const contract = new CompanyContract();
+    contract.assign({
       company: { name: "ACME", address: { street: "Main" } },
     });
     const store = createContractStore(contract);
@@ -161,10 +169,12 @@ describe("createContractStore", () => {
     store.contract.company.address.street = "Elm";
     expect(addressListener).toHaveBeenCalledTimes(1);
 
-    const branchAddress = createAddressContract({
+    const branchContract = new AddressContract();
+    branchContract.assign({
       address: { street: "Side", city: "Gotham", zip: "10001" },
       country: "US",
-    }).address;
+    });
+    const branchAddress = branchContract.address;
 
     store.contract.company.address = branchAddress;
     expect(addressListener).toHaveBeenCalledTimes(1);
@@ -179,7 +189,13 @@ describe("createContractStore", () => {
         dType: "Generic",
       },
     };
-    const contract = createContractInstance(schema, {
+    class CatalogContract extends Contract {
+      defineSchema() {
+        return schema;
+      }
+    }
+    const contract = new CatalogContract();
+    contract.assign({
       catalog: { books: ["Refactoring"] },
     });
     const store = createContractStore(contract);
@@ -196,7 +212,8 @@ describe("createContractStore", () => {
   });
 
   it("exposes raw values through symbols and reuses proxies", () => {
-    const contract = createProjectContract({
+    const contract = new ProjectContract();
+    contract.assign({
       project: { tasks: ["initial"], metadata: { owner: "Ada" } },
     });
     const store = createContractStore(contract);
@@ -215,7 +232,8 @@ describe("createContractStore", () => {
   });
 
   it("propagates deletions for contract and array fields", () => {
-    const contract = createProjectContract({
+    const contract = new ProjectContract();
+    contract.assign({
       project: { tasks: ["initial", "todo"], metadata: { owner: "Ada" } },
     });
     const store = createContractStore(contract);
@@ -237,11 +255,11 @@ describe("createContractStore", () => {
     delete store.contract.project.metadata.owner;
     expect(contractEvents).toEqual(["delete"]);
 
-    const profileStore = createContractStore(
-      createProfileContract({
-        profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
-      }),
-    );
+    const profileContract = new ProfileContract();
+    profileContract.assign({
+      profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
+    });
+    const profileStore = createContractStore(profileContract);
     const bioEvents = [];
     profileStore.subscribe("profile.bio", (event) => bioEvents.push(event.type));
     delete profileStore.contract.profile.bio;
@@ -249,7 +267,8 @@ describe("createContractStore", () => {
   });
 
   it("handles symbol keyed operations and method binding", () => {
-    const contract = createProjectContract({
+    const contract = new ProjectContract();
+    contract.assign({
       project: { tasks: ["initial"], metadata: { owner: "Ada" } },
     });
     const store = createContractStore(contract);
@@ -286,7 +305,8 @@ describe("createContractStore", () => {
   });
 
   it("ignores deletions for missing properties across proxies", () => {
-    const contract = createProjectContract({
+    const contract = new ProjectContract();
+    contract.assign({
       project: { tasks: ["initial"], metadata: { owner: "Ada" } },
     });
     const store = createContractStore(contract);
@@ -301,7 +321,8 @@ describe("createContractStore", () => {
   });
 
   it("binds non mutating array methods and reuses cached proxies", () => {
-    const contract = createProjectContract({
+    const contract = new ProjectContract();
+    contract.assign({
       project: { tasks: ["initial", "todo"], metadata: { owner: "Ada" } },
     });
     const store = createContractStore(contract);
@@ -316,7 +337,8 @@ describe("createContractStore", () => {
   });
 
   it("delegates helper methods to the underlying contract", () => {
-    const contract = createProjectContract({
+    const contract = new ProjectContract();
+    contract.assign({
       project: { tasks: ["initial"], metadata: { owner: "Ada" } },
     });
     const store = createContractStore(contract);

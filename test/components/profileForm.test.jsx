@@ -5,7 +5,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 
 import { createContractStore } from "../../src/createContractStore.js";
 import { useContract, useContractSelector, useContractValue } from "../../src/hooks.js";
-import { createProfileContract } from "../helpers/contracts.js";
+import { ProfileContract } from "../helpers/contracts.js";
 
 function ProfileField({ store, label, path, testId }) {
   const value = useContractValue(store, path);
@@ -54,7 +54,8 @@ function ProfileForm({ store }) {
 
 describe("ProfileForm component", () => {
   it("renders contract values and responds to store updates", async () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: {
         firstName: "Ada",
         lastName: "Lovelace",
@@ -83,7 +84,8 @@ describe("ProfileForm component", () => {
   });
 
   it("updates the contract when editing fields", () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: {
         firstName: "Ada",
         lastName: "Lovelace",

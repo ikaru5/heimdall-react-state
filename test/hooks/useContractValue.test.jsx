@@ -5,7 +5,7 @@ import { render, renderHook } from "@testing-library/react";
 
 import { createContractStore } from "../../src/createContractStore.js";
 import { useContractValue } from "../../src/hooks.js";
-import { createProfileContract } from "../helpers/contracts.js";
+import { ProfileContract } from "../helpers/contracts.js";
 
 function ValueProbe({ store, path, options, onRender }) {
   const value = useContractValue(store, path, options);
@@ -21,7 +21,8 @@ describe("useContractValue", () => {
   });
 
   it("returns values at the provided path and applies equality checks", async () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
@@ -61,7 +62,8 @@ describe("useContractValue", () => {
   });
 
   it("respects the exact option for parent subscriptions", async () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);

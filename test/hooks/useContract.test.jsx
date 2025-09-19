@@ -5,7 +5,7 @@ import { render, renderHook } from "@testing-library/react";
 
 import { createContractStore } from "../../src/createContractStore.js";
 import { useContract } from "../../src/hooks.js";
-import { createProfileContract } from "../helpers/contracts.js";
+import { ProfileContract } from "../helpers/contracts.js";
 
 function ContractProbe({ store, onRender }) {
   const contract = useContract(store);
@@ -21,7 +21,8 @@ describe("useContract", () => {
   });
 
   it("returns the proxied contract and re-renders on revisions", async () => {
-    const contract = createProfileContract({
+    const contract = new ProfileContract();
+    contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
