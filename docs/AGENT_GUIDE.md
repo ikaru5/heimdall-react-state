@@ -1,76 +1,76 @@
-# Agent Guide – Heimdall React State
+# Agent guide – Heimdall React State
 
-> ⚠️ **Pflicht zur Pflege:** Diese Agentendokumentation muss automatisch aktualisiert werden, sobald der Agent relevante neue Erkenntnisse gewinnt oder Änderungen vornimmt, die bestehende Informationen betreffen. Jede Änderung am Code, am Build-Prozess oder an zentralen Abhängigkeiten ist sofort hier einzupflegen.
+> ⚠️ **Maintenance requirement:** Update this agent documentation automatically whenever you gain relevant knowledge or make changes that affect existing information. Any change to the code, build process, or key dependencies must be recorded here immediately.
 
-## Ziel und Kontext
+## Purpose and context
 
-- **Paketname:** `@ikaru5/heimdall-react-state` – React-Bindings rund um `heimdall-contract`.
-- **Rolle der Agenten:** Wartung, Qualitätssicherung und Erweiterung der Bibliothek sowie der Dokumentation.
-- **Wichtige Werte:** Stabilität, feingranulare Aktualisierung von React-Komponenten, strenge Testabdeckung.
+- **Package name:** `@ikaru5/heimdall-react-state` – React bindings around `heimdall-contract`.
+- **Role of the agents:** Maintain, assure the quality of, and extend the library and its documentation.
+- **Core values:** Stability, fine-grained React component updates, rigorous test coverage.
 
-## Projektstruktur (Stand jetzt)
+## Project structure (current)
 
 ```
 src/
-  createContractStore.js   # Kern: Observable-Store-Layer rund um Contracts
-  hooks.js                 # Implementierung der React-Hooks (useContractValue, ...)
-  index.js                 # Public API / Re-Exports
-  internal/                # Hilfsfunktionen (Pfad-Utilities, Proxy-Wrapper, Revisionen)
-  types.js                 # JSDoc-Typdefinitionen für Entwickelnde
+  createContractStore.js   # Core observable store layer around contracts
+  hooks.js                 # React hook implementations (useContractValue, ...)
+  index.js                 # Public API / re-exports
+  internal/                # Helpers (path utilities, proxy wrappers, revisions)
+  types.js                 # JSDoc type definitions for contributors
 
 docs/
-  AGENT_GUIDE.md           # Diese Datei
-  architecture-overview.md # Architektur- und Designübersicht
-README.md                  # Nutzer:innen-Doku mit Quickstart und API
-eslint.config.js           # Flat ESLint-Konfiguration (ESLint 9, ersetzt .eslintrc)
+  AGENT_GUIDE.md           # This file
+  architecture-overview.md # Architecture and design overview
+README.md                  # User documentation with quick start and API reference
+eslint.config.js           # Flat ESLint configuration (ESLint 9, replaces .eslintrc)
 ```
 
-> **Wenn neue zentrale Dateien oder Ordner entstehen**, sind sie hier einzutragen und kurz zu beschreiben.
+> **Whenever new central files or folders appear,** list them here with a short description.
 
-## Kernkonzepte, die nicht verletzt werden dürfen
+## Non-negotiable principles
 
-1. **Vertrauen in `heimdall-contract`:** Keine direkten Änderungen an dessen internem Zustand außerhalb der öffentlichen API (`assign`, `setValueAtPath`, etc.).
-2. **Pfadbasierte Reaktivität:** Jede Mutation muss über `emitChange` den passenden Pfad und dessen Ahnen informieren. Neue Features dürfen diese Benachrichtigungskette nicht brechen.
-3. **Proxys bleiben stabil:** Objekt- und Array-Proxys werden gecacht. Beim Arbeiten an `wrap*`-Hilfsfunktionen unbedingt darauf achten, dass Identitäten pro Instanz bestehen bleiben.
-4. **Hooks sind Concurrent-Mode-sicher:** Alle Hooks nutzen `useSyncExternalStore`. Erweiterungen müssen dieses Muster beibehalten.
+1. **Trust `heimdall-contract`:** Never mutate its internal state outside the public API (`assign`, `setValueAtPath`, etc.).
+2. **Path-driven reactivity:** Every mutation must notify the relevant path and its ancestors via `emitChange`. New features must preserve this notification chain.
+3. **Stable proxies:** Object and array proxies are cached. When working on `wrap*` helpers, ensure identities remain per instance.
+4. **Concurrent-mode safe hooks:** All hooks rely on `useSyncExternalStore`. Extensions have to keep this pattern.
 
-## Arbeitsablauf für Änderungen
+## Change workflow
 
-1. **Analyse & Design**
-   - Prüfe zuerst `docs/architecture-overview.md` sowie die Tests unter `test/`.
-   - Überprüfe, ob bestehende Patterns wiederverwendet werden können.
-2. **Implementierung**
-   - Halte dich an die existierenden Utility-Funktionen im `internal/`-Verzeichnis.
-   - Ergänze bei Bedarf JSDoc-Typen in `types.js`, damit die API konsistent bleibt.
-3. **Tests & Qualitätssicherung**
-   - `npm test` ausführen (Coverage basiert auf Jest 30 mit `coverageProvider: "v8"`).
-   - `npm run lint` (ESLint 9 Flat Config in `eslint.config.js`) und `npm run format` prüfen Style & Formatierung.
-   - Bei Anpassungen an Hooks Integrationstests unter `test/` erweitern.
-4. **Dokumentation anpassen**
-   - README für Nutzer:innen, diese Agenten-Doku für Prozesswissen, `architecture-overview.md` für technische Entscheidungen.
-   - Jede veränderte Beobachtung oder neue Abhängigkeit **sofort** dokumentieren.
+1. **Analysis & design**
+   - Review `docs/architecture-overview.md` and the tests under `test/` first.
+   - Check whether existing patterns can be reused.
+2. **Implementation**
+   - Stick to the existing utilities inside the `internal/` directory.
+   - Add JSDoc types in `types.js` when needed to keep the API consistent.
+3. **Tests & quality assurance**
+   - Run `npm test` (coverage is based on Jest 30 with `coverageProvider: "v8"`).
+   - Run `npm run lint` (ESLint 9 flat config in `eslint.config.js`) and `npm run format` to verify style and formatting.
+   - Extend integration tests under `test/` when modifying hooks.
+4. **Documentation updates**
+   - README for user-facing information, this agent doc for process knowledge, `architecture-overview.md` for technical decisions.
+   - Document every observed change or new dependency **immediately**.
 
-## Typische Fehlerquellen & Checks
+## Common pitfalls & checks
 
-- **Vergessene Instrumentierung**: Neue Mutationswege (z. B. zusätzliche Contract-Methoden) müssen `emitChange` auslösen.
-- **Array-Operationen**: Nutze die vorhandene Liste `MUTATING_ARRAY_METHODS`, wenn neue Methoden hinzukommen.
-- **Speicherlecks**: Beim Hinzufügen neuer Caches immer WeakMap/WeakSet einsetzen, um Contracts freizugeben.
-- **Subscriptions**: Beim Erweitern von `subscribe`-Optionen daran denken, die `unsubscribe`-Logik zu aktualisieren.
+- **Missing instrumentation:** New mutation paths (e.g. additional contract methods) must trigger `emitChange`.
+- **Array operations:** Use the existing `MUTATING_ARRAY_METHODS` list when additional methods need handling.
+- **Memory leaks:** Always use WeakMap/WeakSet for new caches so contracts can be released.
+- **Subscriptions:** When extending `subscribe` options, update the `unsubscribe` logic accordingly.
 
-## Wann diese Datei aktualisiert werden muss
+## When to update this file
 
-- Neue Verzeichnisse, bedeutende Dateien oder Build-Schritte.
-- Änderungen an Test- oder Lint-Workflows.
-- Erkenntnisse über häufige Bugs oder Workarounds.
-- Deprecations oder Breaking Changes in `heimdall-contract` **oder zentralen Tooling-Abhängigkeiten** (z. B. aktualisierte ESLint/Jest-Versionen, neue Overrides in `package.json`).
+- New directories, significant files, or build steps.
+- Changes to test or lint workflows.
+- Insights into recurring bugs or workarounds.
+- Deprecations or breaking changes in `heimdall-contract` **or critical tooling dependencies** (e.g. updated ESLint/Jest versions, new overrides in `package.json`).
 
-## Kontaktpunkte / Weiterführende Ressourcen
+## Points of contact / further resources
 
-- `docs/architecture-overview.md` für aktuelle Architektur.
-- Tests im Ordner `test/` als lebende Spezifikation.
-- README für API-Beispiele, die mit Code synchron gehalten werden müssen.
+- `docs/architecture-overview.md` for the current architecture.
+- Tests in the `test/` folder as a living specification.
+- README for API examples that must stay in sync with the code.
 
-> 💡 **Merke:** Jede Agentenaktion, die ohne Aktualisierung dieser Dokumentation erfolgt, gilt als unvollständig. Halte sie deshalb synchron – idealerweise automatisiert über den Arbeitsablauf.
+> 💡 **Remember:** Any agent action carried out without updating this documentation is considered incomplete. Keep it synchronised—ideally automated via the workflow.
 
 ## Git Commit Message Style Guide
 

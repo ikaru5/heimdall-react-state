@@ -5,12 +5,12 @@
 
 `@ikaru5/heimdall-react-state` adds a lightweight observable layer and idiomatic React hooks on top of [`heimdall-contract`](https://github.com/ikaru5/heimdall-contract). It keeps contracts framework-agnostic while allowing React components to subscribe to contract values with fine-grained updates.
 
-## Merkmale
+## Features
 
-- 🔁 **Feingranulare Reaktivität:** Komponenten rendern nur neu, wenn sich der beobachtete Pfad ändert.
-- 🧩 **Nahtlose Contract-Integration:** Alle bestehenden Contract-Methoden (`assign`, `setValueAtPath`, `isValid`, …) bleiben verfügbar.
-- ⚛️ **Concurrent-Mode-sicher:** Hooks basieren auf `useSyncExternalStore`.
-- 🧪 **Erprobte Basis:** Umfangreiche Tests decken Store- und Hook-Verhalten ab.
+- 🔁 **Fine-grained reactivity:** Components re-render only when the observed path changes.
+- 🧩 **Seamless contract integration:** All existing contract methods (`assign`, `setValueAtPath`, `isValid`, …) stay available.
+- ⚛️ **Concurrent-mode safe:** Hooks are based on `useSyncExternalStore`.
+- 🧪 **Battle-tested foundation:** Extensive tests cover store and hook behaviour.
 
 ## Installation
 
@@ -68,7 +68,7 @@ Wraps an existing contract instance and returns an observable store:
 
 The wrapper instruments nested contracts, plain objects and arrays. For arrays the revision counter is increased whenever indices or length change, so React listeners pick up updates even if the underlying reference stays the same.
 
-> **Hinweis**
+> **Note**
 > Array indices are treated as stable identifiers. If you reorder array entries, listeners subscribed to a specific index (e.g. `addresses.0`) continue to track that index. Revalidating or reassigning after reordering is recommended when working with dynamic lists.
 
 ### React hooks
@@ -143,12 +143,12 @@ const submit = () => {
 };
 ```
 
-## Weiterführende Dokumentation
+## Additional documentation
 
-- [Architekturüberblick](docs/architecture-overview.md) – Details zur Instrumentierung und den Reaktivitätsflüssen.
-- [Agent Guide](docs/AGENT_GUIDE.md) – Pflegehinweise und interne Prozesse.
+- [Architecture overview](docs/architecture-overview.md) – Details on instrumentation and reactivity flows.
+- [Agent guide](docs/AGENT_GUIDE.md) – Maintenance guidance and internal processes.
 
-## Entwicklung
+## Development
 
 ```bash
 npm install
@@ -157,4 +157,4 @@ npm run lint
 npm run format
 ```
 
-Alle Änderungen sollten von Tests und Lints abgedeckt werden. Dokumentation synchron halten!
+All changes should be covered by tests and lints. Keep the documentation in sync!
