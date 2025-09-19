@@ -1,67 +1,67 @@
-# Architekturüberblick – Heimdall React State
+# Architecture overview – Heimdall React State
 
-Dieser Überblick beschreibt den aktuellen Stand der Bibliothek und ersetzt frühere Implementierungsvorschläge.
+This document describes the current state of the library and supersedes earlier implementation proposals.
 
-## 1. High-Level
+## 1. High level
 
-- **Zweck:** Brücke zwischen `heimdall-contract` und React-Komponenten. Liefert einen beobachtbaren Store, der feingranulare Re-Renders erlaubt.
-- **Kernelemente:**
-  - `createContractStore` (Instrumentierung & Observable Layer)
-  - React-Hooks (`useContractValue`, `useContractSelector`, `useContract`)
-  - Pfad-Utilities (`src/internal/path.js`) für Normalisierung, Schlüsselgenerierung und Ahnen-Traversierung
+- **Purpose:** Bridge `heimdall-contract` and React components. Provides an observable store that enables fine-grained re-renders.
+- **Core elements:**
+  - `createContractStore` (instrumentation and observable layer)
+  - React hooks (`useContractValue`, `useContractSelector`, `useContract`)
+  - Path utilities (`src/internal/path.js`) for normalisation, key generation, and ancestor traversal
 
-## 2. Datenfluss bei Mutationen
+## 2. Mutation data flow
 
-1. **Mutation** – erfolgt über Contract-API (`setValueAtPath`, `assign`, direkte Proxy-Zugriffe).
-2. **Instrumentierung** – `createContractStore` patched `setValueAtPath`, wrappt Objekte/Arrays/Child-Contracts mit Proxys und überwacht Array-Mutatoren.
-3. **Emit** – `emitChange` bildet den Pfadschlüssel, erhöht Revisionen für alle Ahnen (`traverseAncestors`) und benachrichtigt Listener.
-4. **Hooks** – `useSyncExternalStore` liest Snapshots und prüft Revisionen plus `equalityFn`, um unnötige Re-Renders zu verhindern.
+1. **Mutation** – performed through the contract API (`setValueAtPath`, `assign`, direct proxy access).
+2. **Instrumentation** – `createContractStore` patches `setValueAtPath`, wraps objects/arrays/child contracts with proxies, and watches array mutators.
+3. **Emit** – `emitChange` builds the path key, increments revisions for all ancestors (`traverseAncestors`), and notifies listeners.
+4. **Hooks** – `useSyncExternalStore` reads snapshots and checks revisions plus `equalityFn` to prevent unnecessary re-renders.
 
-## 3. Store-Aufbau (`createContractStore.js`)
+## 3. Store structure (`createContractStore.js`)
 
-- Verwaltet `subscribers`, `revisions` und Proxy-Caches (WeakMap/WeakSet).
-- `subscribe(path, callback, { exact })` registriert Listener pro Pfadschlüssel. Ahnen werden automatisch informiert, sofern `exact` nicht gesetzt ist.
-- `getRevision(pathKey?)` liefert monotone Zähler als Memoisierungshilfe.
-- `getContract()` stellt die Proxy-Version bereit, `getOriginalContract()` liefert den unveränderten Contract.
-- Instrumentiert Kindstrukturen rekursiv, inklusive später hinzukommender Werte (`captureNestedStructures`).
+- Manages `subscribers`, `revisions`, and proxy caches (WeakMap/WeakSet).
+- `subscribe(path, callback, { exact })` registers listeners per path key. Ancestors are notified automatically unless `exact` is set.
+- `getRevision(pathKey?)` returns monotonic counters as memoisation helpers.
+- `getContract()` exposes the proxy version, `getOriginalContract()` returns the untouched contract.
+- Instruments child structures recursively, including values added later (`captureNestedStructures`).
 
-## 4. React-Hooks (`src/hooks.js`)
+## 4. React hooks (`src/hooks.js`)
 
-- **Gemeinsame Grundlagen**
-  - Validieren Stores via `assertValidStore` (muss `subscribe` und `getRevision` besitzen).
-  - Greifen über `getContractProxy` auf den proxied Contract zu.
+- **Shared fundamentals**
+  - Validate stores via `assertValidStore` (must expose `subscribe` and `getRevision`).
+  - Access the proxied contract through `getContractProxy`.
 - **`useContractValue`**
-  - Normalisiert Pfade (`normalizePath`), bildet Schlüssel (`pathToKey`).
-  - Abonniert Änderungen am Pfad; prüft Revision und optional `equalityFn`.
+  - Normalises paths (`normalizePath`), builds keys (`pathToKey`).
+  - Subscribes to path changes; checks revision and optional `equalityFn`.
 - **`useContractSelector`**
-  - Führt benutzerdefinierten Selector aus, speichert Zwischenergebnisse.
-  - Kombiniert Revisionstracking des Root-Stores mit `equalityFn`.
+  - Runs a custom selector and caches intermediate results.
+  - Combines root-store revision tracking with `equalityFn`.
 - **`useContract`**
-  - Verwendet `useContractSelector`, um globale Revisionen zu verfolgen, und gibt den Proxy memoisiert zurück.
+  - Uses `useContractSelector` to track global revisions and returns the memoised proxy.
 
-## 5. Pfad-Hilfen (`src/internal/path.js`)
+## 5. Path helpers (`src/internal/path.js`)
 
-- `normalizePath` akzeptiert Strings (`"a.b"`), Arrays oder leere Werte → normalisierte Segmentarrays.
-- `pathToKey` wandelt Segmentarrays in Schlüssel (`"a.b"`) um; Root-Schlüssel ist `""`.
-- `traverseAncestors` iteriert vom Blatt zum Root-Schlüssel.
-- `readAtPath` extrahiert Werte sicher entlang des Pfades.
-- `RAW_SYMBOL` kennzeichnet Rohwerte, wenn Proxys Zugriff gewähren müssen.
+- `normalizePath` accepts strings (`"a.b"`), arrays, or empty values and produces normalised segment arrays.
+- `pathToKey` converts segment arrays into keys (`"a.b"`); the root key is `""`.
+- `traverseAncestors` iterates from the leaf to the root key.
+- `readAtPath` safely extracts values along the path.
+- `RAW_SYMBOL` marks raw values when proxies need to expose direct access.
 
-## 6. Erweiterungspunkte
+## 6. Extension points
 
-- **`options.onUpdate`**: Callback in `createContractStore` für Logging/Devtools.
-- **Equality-Funktionen:** Hooks akzeptieren `equalityFn`, um komplexe Vergleiche zu steuern.
-- **Proxy-Strategie:** Neue Strukturtypen müssen über `ensureInstrumented` eingebunden werden.
+- **`options.onUpdate`**: callback in `createContractStore` for logging/devtools.
+- **Equality functions:** hooks accept an `equalityFn` to control complex comparisons.
+- **Proxy strategy:** new structure types must be wired through `ensureInstrumented`.
 
-## 7. Tests & Qualitätssicherung
+## 7. Tests and quality assurance
 
-- `npm test` (Jest, JS-DOM) deckt Store- und Hook-Verhalten ab.
-- `npm run lint` prüft ESLint-Regeln inkl. React-Hooks-Plugin.
-- `npm run format` stellt Prettier-konformes Formatting sicher.
+- `npm test` (Jest, JS-DOM) covers store and hook behaviour.
+- `npm run lint` enforces ESLint rules including the React Hooks plugin.
+- `npm run format` keeps formatting aligned with Prettier.
 
-## 8. Bekannte Grenzen
+## 8. Known limitations
 
-- Array-Reordering erfordert manuelle Revalidierung, weil Indizes als stabile Schlüssel behandelt werden.
-- Direkte Mutationen außerhalb der Contract-API (z. B. Fremdmethoden) werden nur erkannt, wenn sie über instrumentierte Proxys laufen.
+- Array reordering requires manual revalidation because indices are treated as stable keys.
+- Direct mutations outside the contract API (e.g. foreign methods) are only detected when they go through instrumented proxies.
 
-> Diese Datei ist aktuell zu halten, sobald sich interne Abläufe oder Tests ändern.
+> Keep this document up to date whenever internal flows or tests change.
