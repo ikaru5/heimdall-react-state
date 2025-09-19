@@ -63,3 +63,19 @@ eslint.config.js           # Flat ESLint-Konfiguration (ESLint 9, ersetzt .eslin
 - README für API-Beispiele, die mit Code synchron gehalten werden müssen.
 
 > 💡 **Merke:** Jede Agentenaktion, die ohne Aktualisierung dieser Dokumentation erfolgt, gilt als unvollständig. Halte sie deshalb synchron – idealerweise automatisiert über den Arbeitsablauf.
+
+## Git Commit Message Style Guide
+
+### Format
+All commit messages must follow: `[TYPE] brief description in lowercase`
+
+### Types
+- **`[FEATURE]`** - New functionality, enhancements, or additions
+- **`[BUGFIX]`** - Bug fixes, error corrections, or issue resolutions
+- **`[TASK]`** - Maintenance work, documentation updates, configuration changes, or housekeeping
+
+### Rules
+- Use lowercase after the prefix
+- Use imperative mood (e.g., "add", "fix", "update")
+- Keep messages concise but descriptive
+- One logical change per commit

@@ -1,5 +1,8 @@
 # Heimdall React State
 
+[![Tests](https://github.com/ikaru5/heimdall-react-state/actions/workflows/test.yml/badge.svg)](https://github.com/ikaru5/heimdall-react-state/actions/workflows/test.yml)
+![Coverage Badge](./coverage-badge.svg)
+
 `@ikaru5/heimdall-react-state` adds a lightweight observable layer and idiomatic React hooks on top of [`heimdall-contract`](https://github.com/ikaru5/heimdall-contract). It keeps contracts framework-agnostic while allowing React components to subscribe to contract values with fine-grained updates.
 
 ## Merkmale
