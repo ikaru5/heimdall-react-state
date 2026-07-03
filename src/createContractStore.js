@@ -1,5 +1,6 @@
 import {
   RAW_SYMBOL,
+  ROOT_KEY,
   normalizePath,
   pathToKey,
   readAtPath,
@@ -76,6 +77,20 @@ export function createContractStore(contract, options = {}) {
       listeners.forEach((listener) => {
         if (listener.exact && ancestorKey !== key) return;
         listener.callback({ ...baseEvent, observerKey: ancestorKey, revision });
+      });
+    });
+
+    // replacing a value also replaces everything below it, so subscribers at descendant
+    // paths are notified as well - their observed value may have changed with the parent.
+    // The exact flag only guards against noise from descendants, not from ancestors.
+    const descendantPrefix = key === ROOT_KEY ? "" : `${key}.`;
+    subscribers.forEach((listeners, subscriberKey) => {
+      if (visited.has(subscriberKey)) return;
+      if (!subscriberKey.startsWith(descendantPrefix)) return;
+      visited.add(subscriberKey);
+      const revision = bumpRevision(subscriberKey);
+      listeners.forEach((listener) => {
+        listener.callback({ ...baseEvent, observerKey: subscriberKey, revision });
       });
     });
   }

@@ -178,11 +178,12 @@ describe("createContractStore", () => {
     });
     const branchAddress = branchContract.address;
 
+    // replacing the parent changes the observed street ("Elm" -> "Side"), so the child subscriber is notified
     store.contract.company.address = branchAddress;
-    expect(addressListener).toHaveBeenCalledTimes(1);
+    expect(addressListener).toHaveBeenCalledTimes(2);
 
     store.contract.company.address.street = "Park";
-    expect(addressListener).toHaveBeenCalledTimes(2);
+    expect(addressListener).toHaveBeenCalledTimes(3);
   });
 
   it("captures nested arrays inside generics", () => {
@@ -497,5 +498,45 @@ describe("validation notifications", () => {
 
     expect(nestedErrorsListener).toHaveBeenCalledTimes(1);
     expect(store.getValue("nested.errors").fields.name.issues[0].validation).toBe("presence");
+  });
+
+  it("notifies deep error subscribers when a field clears while another stays invalid", () => {
+    const store = createContractStore(new ValidatedContract());
+    store.isValid(); // email and nested.name invalid
+
+    const emailErrorsListener = jest.fn();
+    store.subscribe("errors.fields.email", emailErrorsListener);
+
+    store.setValue("email", "ada@example.com");
+    store.isValid(); // email clears, nested.name stays invalid
+
+    expect(emailErrorsListener).toHaveBeenCalled();
+    expect(store.getValue("errors.fields.email")).toBeUndefined();
+  });
+});
+
+describe("descendant notifications", () => {
+  it("notifies child subscribers when an ancestor value is replaced", () => {
+    const contract = new ProfileContract();
+    contract.assign({ profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" } });
+    const store = createContractStore(contract);
+
+    const firstNameListener = jest.fn();
+    const exactFirstNameListener = jest.fn();
+    const siblingListener = jest.fn();
+    const profileListener = jest.fn();
+    store.subscribe("profile.firstName", firstNameListener);
+    store.subscribe("profile.firstName", exactFirstNameListener, { exact: true });
+    store.subscribe("unrelated.path", siblingListener);
+    store.subscribe("profile", profileListener);
+
+    store.contract.profile = { firstName: "Grace", lastName: "Hopper", bio: "Rear Admiral" };
+
+    // the exact flag only guards against descendant noise - an ancestor replacement changes the value
+    expect(firstNameListener).toHaveBeenCalledTimes(1);
+    expect(exactFirstNameListener).toHaveBeenCalledTimes(1);
+    expect(profileListener).toHaveBeenCalledTimes(1);
+    expect(siblingListener).not.toHaveBeenCalled();
+    expect(store.getValue("profile.firstName")).toBe("Grace");
   });
 });
