@@ -195,6 +195,9 @@ npm install
 npm test
 npm run lint
 npm run format
+npm run build:types
 ```
 
 All changes should be covered by tests and lints. Keep the documentation in sync!
+
+TypeScript declarations are generated from the JSDoc (`npm run build:types`, wired into `prepublishOnly` and CI) - the package ships them, no `@types` package needed.

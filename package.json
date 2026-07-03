@@ -4,8 +4,10 @@
   "description": "React bindings and observable store wrapper for heimdall-contract instances.",
   "type": "module",
   "main": "src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
     ".": {
+      "types": "./src/index.d.ts",
       "import": "./src/index.js"
     },
     "./package.json": "./package.json"
@@ -24,7 +26,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier \"**/*.{js,jsx,json,md}\" --check",
-    "format:write": "prettier \"**/*.{js,jsx,json,md}\" --write"
+    "format:write": "prettier \"**/*.{js,jsx,json,md}\" --write",
+    "build:types": "find src -name '*.d.ts' -delete && tsc -p tsconfig.types.json",
+    "prepublishOnly": "npm test && npm run lint && npm run build:types"
   },
   "keywords": [
     "heimdall",
@@ -43,10 +47,12 @@
     "react": ">=18"
   },
   "devDependencies": {
+    "@ikaru5/heimdall-contract": "^0.10.0",
     "@swc/core": "^1.13.5",
     "@swc/jest": "^0.2.39",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.2.17",
     "cross-env": "^10.0.0",
     "eslint": "^9.35.0",
     "eslint-config-prettier": "^10.1.0",
@@ -58,7 +64,7 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-test-renderer": "^19.1.1",
-    "@ikaru5/heimdall-contract": "^0.10.0"
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "test-exclude": "^7.0.1"
