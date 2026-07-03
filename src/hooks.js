@@ -111,6 +111,56 @@ export const useContractValue = (store, path, options = {}) => {
 };
 
 /**
+ * Reads the validation errors at a field path and subscribes to their updates.
+ *
+ * The path addresses the field like in the schema ("address.street", ["items", 0, "city"]),
+ * the translation into the errors tree (fields/elements) is handled by the contract's
+ * errorsAt helper. Without a path the whole errors tree of the contract is returned.
+ * Returns undefined when there are no errors at the path.
+ *
+ * Requires @ikaru5/heimdall-contract >= 0.10.
+ *
+ * @param {import("./types.js").ContractStore} store
+ * @param {string | Array<string | number>} [path]
+ * @param {{ equalityFn?: (previous: unknown, next: unknown) => boolean }} [options]
+ * @returns {import("@ikaru5/heimdall-contract/types").ErrorNode | undefined}
+ */
+export const useContractErrors = (store, path, options = {}) => {
+  assertValidStore(store, "useContractErrors");
+  if ("function" !== typeof store.getOriginalContract) {
+    throw new TypeError(`useContractErrors ${STORE_ERROR}`);
+  }
+
+  const equalityFn = options.equalityFn ?? Object.is;
+  const normalizedPath = useMemo(() => normalizePath(path), [path]);
+
+  const getSnapshot = useCallback(() => {
+    const contract = store.getOriginalContract();
+    if ("function" !== typeof contract.errorsAt) {
+      throw new TypeError("useContractErrors requires @ikaru5/heimdall-contract >= 0.10");
+    }
+    return normalizedPath.length ? contract.errorsAt(normalizedPath) : contract.errors;
+  }, [store, normalizedPath]);
+
+  const subscribe = useCallback(
+    (onStoreChange) => {
+      let previousValue = getSnapshot();
+      // every change inside the errors tree bubbles up to the "errors" key
+      return store.subscribe(["errors"], () => {
+        const nextValue = getSnapshot();
+        if (!equalityFn(previousValue, nextValue)) {
+          previousValue = nextValue;
+          onStoreChange();
+        }
+      });
+    },
+    [store, getSnapshot, equalityFn],
+  );
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+};
+
+/**
  * Returns the proxied contract and re-renders whenever it changes.
  * @param {import("./types.js").ContractStore} store
  * @returns {any}

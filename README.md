@@ -9,8 +9,9 @@
 
 - 🔁 **Fine-grained reactivity:** Components re-render only when the observed path changes.
 - 🧩 **Seamless contract integration:** All existing contract methods (`assign`, `setValueAtPath`, `isValid`, …) stay available.
+- 🚨 **Validation aware:** Validation runs notify subscribers, `useContractErrors` renders field errors that appear _and_ disappear.
 - ⚛️ **Concurrent-mode safe:** Hooks are based on `useSyncExternalStore`.
-- 🧪 **Battle-tested foundation:** Extensive tests cover store and hook behaviour.
+- 🧪 **Fully covered:** 100% test coverage, enforced in CI.
 
 ## Installation
 
@@ -18,7 +19,7 @@
 npm install @ikaru5/heimdall-contract @ikaru5/heimdall-react-state
 ```
 
-The package exposes ESM modules and lists `react` (18+) as a peer dependency.
+The package exposes ESM modules and lists `react` (18+) and `@ikaru5/heimdall-contract` (0.10+) as peer dependencies.
 
 ## Quick start
 
@@ -125,13 +126,24 @@ function SubmitButton() {
 
 `useContractSelector` recalculates only when the selector result changes. In the example above, the custom `equalityFn` prevents re-renders when the derived flags stay the same, even if other contract fields update.
 
+#### `useContractErrors(store, path?, options?)`
+
+Reads the [error node](https://github.com/ikaru5/heimdall-contract/blob/master/doc/errors.md) at a field path and subscribes to validation runs. Requires `@ikaru5/heimdall-contract` 0.10+.
+
+- `path`: the field path like in the schema (`"address.street"`, `["items", 0, "city"]`) - the translation into the errors tree is handled by the contract's `errorsAt`. Omit it for the whole errors tree.
+- Returns the `ErrorNode` (`{issues, fields, elements}`) or `undefined` when the path has no errors.
+- `options.equalityFn` (default `Object.is`): custom comparison before triggering a re-render.
+
 #### `useContract(store)`
 
 Convenience helper that returns the proxied contract and forces a re-render on every revision. Useful for debugging or simple prototypes; prefer `useContractValue`/`useContractSelector` for production usage.
 
+> **Note**
+> Path strings use `.` as separator, so field names containing dots need the array form (or better: avoid dots in field names).
+
 ## Working with validations
 
-All validation helpers on the contract remain untouched. Because the plugin reuses the native `assign`, `setValueAtPath` and `isValid` methods, validation semantics stay identical to the base library.
+All validation helpers on the contract remain untouched. Because the plugin reuses the native `assign`, `setValueAtPath` and `isValid` methods, validation semantics stay identical to the base library. Validation runs notify subscribers: appearing errors, clearing errors and `isValidState` changes all trigger updates.
 
 Manual validation flows stay straightforward:
 
@@ -141,6 +153,34 @@ const submit = () => {
     // send data
   }
 };
+```
+
+### Displaying validation errors
+
+`useContractErrors` renders the errors of a single field and updates when they appear or disappear. Each issue carries the name of the failed validation, so the UI can react per validation instead of parsing message strings:
+
+```jsx
+function EmailField({ store }) {
+  const value = useContractValue(store, "email");
+  const errors = useContractErrors(store, "email");
+
+  return (
+    <label>
+      E-Mail
+      <input
+        value={value}
+        aria-invalid={Boolean(errors)}
+        onChange={(event) => store.setValue("email", event.target.value)}
+        onBlur={() => store.isValid()}
+      />
+      {errors?.issues?.map((issue) => (
+        <span key={issue.validation} className={`error error-${issue.validation}`}>
+          {issue.message}
+        </span>
+      ))}
+    </label>
+  );
+}
 ```
 
 ## Additional documentation
