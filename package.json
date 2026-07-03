@@ -1,6 +1,6 @@
 {
   "name": "@ikaru5/heimdall-react-state",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "React bindings and observable store wrapper for heimdall-contract instances.",
   "type": "module",
   "main": "src/index.js",

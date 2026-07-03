@@ -185,6 +185,7 @@ function EmailField({ store }) {
 
 ## Additional documentation
 
+- [Changelog](CHANGELOG.md) – All notable changes per release.
 - [Architecture overview](docs/architecture-overview.md) – Details on instrumentation and reactivity flows.
 - [Agent guide](docs/AGENT_GUIDE.md) – Maintenance guidance and internal processes.
 
