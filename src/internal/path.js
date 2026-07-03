@@ -17,7 +17,7 @@ export const RAW_SYMBOL = Symbol.for("heimdall-react-state.raw");
  */
 export const toPathSegment = (segment) => {
   if (segment === undefined || segment === null) return "";
-  return typeof segment === "number" ? String(segment) : String(segment);
+  return String(segment);
 };
 
 /**

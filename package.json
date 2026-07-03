@@ -6,9 +6,17 @@
   "main": "src/index.js",
   "exports": {
     ".": {
-      "import": "./src/index.js",
-      "require": "./src/index.js"
-    }
+      "import": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "docs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ikaru5/heimdall-react-state.git"
   },
   "sideEffects": false,
   "scripts": {
@@ -25,9 +33,13 @@
     "state",
     "validation"
   ],
-  "author": "",
+  "author": "Kirill Kulikov <k.kulikov94@gmail.com>",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "peerDependencies": {
+    "@ikaru5/heimdall-contract": "^0.10.0",
     "react": ">=18"
   },
   "devDependencies": {
@@ -45,10 +57,8 @@
     "prettier": "^3.2.5",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-test-renderer": "^19.1.1"
-  },
-  "dependencies": {
-    "@ikaru5/heimdall-contract": "^0.6.0"
+    "react-test-renderer": "^19.1.1",
+    "@ikaru5/heimdall-contract": "^0.10.0"
   },
   "overrides": {
     "test-exclude": "^7.0.1"
