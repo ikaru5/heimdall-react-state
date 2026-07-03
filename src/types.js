@@ -2,7 +2,7 @@
  * Describes the payload sent when notifying subscribers.
  *
  * @typedef {Object} EmitPayload
- * @property {"set" | "delete" | "mutate"} type
+ * @property {"set" | "delete" | "mutate" | "validate"} type
  * @property {unknown} [value]
  * @property {unknown} [previousValue]
  */

@@ -432,3 +432,70 @@ describe("createContractStore", () => {
     expect(store.getValue("field")).toBe("internal");
   });
 });
+
+describe("validation notifications", () => {
+  class ValidatedContract extends Contract {
+    defineSchema() {
+      return {
+        email: { dType: "String", presence: true, isEmail: true },
+        nested: {
+          dType: "Contract",
+          contract: { name: { dType: "String", presence: true } },
+        },
+      };
+    }
+  }
+
+  it("notifies errors subscribers when errors appear and when they clear", () => {
+    const store = createContractStore(new ValidatedContract());
+    const errorsListener = jest.fn();
+    store.subscribe("errors", errorsListener);
+
+    // appearing errors notify through the patched setValueAtPath writes
+    expect(store.isValid()).toBe(false);
+    const callsAfterInvalidRun = errorsListener.mock.calls.length;
+    expect(callsAfterInvalidRun).toBeGreaterThan(0);
+    expect(store.getOriginalContract().errors.fields.email.issues).toHaveLength(2);
+
+    store.setValue("email", "ada@example.com");
+    store.setValue("nested.name", "Ada");
+    expect(errorsListener).toHaveBeenCalledTimes(callsAfterInvalidRun);
+
+    // becoming valid clears the errors object through a plain write - the store must still notify
+    expect(store.isValid()).toBe(true);
+    expect(errorsListener).toHaveBeenCalledTimes(callsAfterInvalidRun + 1);
+    expect(store.getOriginalContract().errors).toStrictEqual({});
+
+    // valid to valid changes nothing and stays silent
+    expect(store.isValid()).toBe(true);
+    expect(errorsListener).toHaveBeenCalledTimes(callsAfterInvalidRun + 1);
+  });
+
+  it("notifies isValidState subscribers only when the state changes", () => {
+    const store = createContractStore(new ValidatedContract());
+    const stateListener = jest.fn();
+    store.subscribe("isValidState", stateListener);
+
+    store.isValid();
+    expect(stateListener).toHaveBeenCalledTimes(1); // undefined -> false
+
+    store.isValid();
+    expect(stateListener).toHaveBeenCalledTimes(1); // false -> false stays silent
+
+    store.setValue("email", "ada@example.com");
+    store.setValue("nested.name", "Ada");
+    store.isValid();
+    expect(stateListener).toHaveBeenCalledTimes(2); // false -> true
+  });
+
+  it("notifies nested error paths when a parent validation runs", () => {
+    const store = createContractStore(new ValidatedContract());
+    const nestedErrorsListener = jest.fn();
+    store.subscribe("nested.errors", nestedErrorsListener);
+
+    store.isValid();
+
+    expect(nestedErrorsListener).toHaveBeenCalledTimes(1);
+    expect(store.getValue("nested.errors").fields.name.issues[0].validation).toBe("presence");
+  });
+});

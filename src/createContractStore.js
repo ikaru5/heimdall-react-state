@@ -140,6 +140,33 @@ export function createContractStore(contract, options = {}) {
       }
       return result;
     };
+
+    // isValid resets errors and isValidState through plain property writes on the raw
+    // instance, which no proxy trap can observe - so validation runs are announced here.
+    // Newly written errors already notify through the patched setValueAtPath, therefore
+    // an emit is only needed when previous errors might have been cleared by the reset.
+    const originalIsValid = instance.isValid.bind(instance);
+    instance.isValid = function patchedIsValid(context) {
+      const previousErrors = this.errors;
+      const previousState = this.isValidState;
+      const result = originalIsValid(context);
+      const hadErrors = previousErrors && 0 < Object.keys(previousErrors).length;
+      if (hadErrors) {
+        emitChange(basePath.concat("errors"), {
+          type: "validate",
+          value: this.errors,
+          previousValue: previousErrors,
+        });
+      }
+      if (!Object.is(previousState, this.isValidState)) {
+        emitChange(basePath.concat("isValidState"), {
+          type: "validate",
+          value: this.isValidState,
+          previousValue: previousState,
+        });
+      }
+      return result;
+    };
   }
 
   /**
