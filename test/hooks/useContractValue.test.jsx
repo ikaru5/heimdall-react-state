@@ -4,7 +4,7 @@ import { render, renderHook } from "@testing-library/react";
 
 import { createContractStore } from "../../src/createContractStore.js";
 import { useContractValue } from "../../src/hooks.js";
-import { ProfileContract } from "../helpers/contracts.js";
+import { ProfileContract, ProjectContract } from "../helpers/contracts.js";
 import { silenceConsoleError } from "../helpers/silenceConsoleError.js";
 
 function ValueProbe({ store, path, options, onRender }) {
@@ -44,23 +44,43 @@ describe("useContractValue", () => {
     expect(onRender).toHaveBeenLastCalledWith("Ada");
 
     await act(async () => {
-      store.contract.profile.lastName = "Hopper";
+      store.setValue("profile.lastName", "Hopper");
     });
     expect(onRender).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      store.contract.profile.firstName = "ADA";
+      store.setValue("profile.firstName", "ADA");
     });
     expect(onRender).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      store.contract.profile.firstName = "Grace";
+      store.setValue("profile.firstName", "Grace");
     });
     expect(onRender).toHaveBeenCalledTimes(2);
     expect(onRender).toHaveBeenLastCalledWith("Grace");
     expect(equalityFn).toHaveBeenCalled();
 
     unmount();
+  });
+
+  it("re-renders for explicit in-place mutations of the same array instance", async () => {
+    const contract = new ProjectContract();
+    contract.assign({ project: { tasks: ["initial"], metadata: {} } });
+    const store = createContractStore(contract);
+    const onRender = jest.fn();
+
+    render(<ValueProbe store={store} path="project.tasks" onRender={onRender} />);
+    expect(onRender).toHaveBeenLastCalledWith(["initial"]);
+
+    const tasksBefore = store.getValue("project.tasks");
+    await act(async () => {
+      store.setValue("project.tasks.1", "added");
+    });
+
+    // same array instance - the regression the 0.2 Object.is comparison swallowed
+    expect(store.getValue("project.tasks")).toBe(tasksBefore);
+    expect(onRender).toHaveBeenCalledTimes(2);
+    expect(onRender).toHaveBeenLastCalledWith(["initial", "added"]);
   });
 
   it("respects the exact option for parent subscriptions", async () => {
@@ -95,12 +115,12 @@ describe("useContractValue", () => {
     expect(looseRender).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      store.contract.profile.bio = "Rear Admiral";
+      store.setValue("profile.bio", "Rear Admiral");
     });
 
     expect(exactRender).toHaveBeenCalledTimes(1);
-    expect(looseRender).toHaveBeenCalledTimes(1);
     expect(exactEquality).not.toHaveBeenCalled();
+    expect(looseRender).toHaveBeenCalledTimes(2);
     expect(looseEquality).toHaveBeenCalled();
 
     unmount();

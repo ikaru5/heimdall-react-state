@@ -1,35 +1,20 @@
-import {
-  RAW_SYMBOL,
-  ROOT_KEY,
-  normalizePath,
-  pathToKey,
-  readAtPath,
-  toPathSegment,
-  traverseAncestors,
-} from "./internal/path.js";
-
-const isPlainObject = (value) => Object.prototype.toString.call(value) === "[object Object]";
+import { normalizePath, pathToKey, readAtPath } from "./internal/path.js";
+import { ROOT_KEY, traverseAncestors } from "./internal/path.js";
 
 const DEFAULT_SUBSCRIBE_OPTIONS = { exact: false };
-const MUTATING_ARRAY_METHODS = new Set([
-  "copyWithin",
-  "fill",
-  "pop",
-  "push",
-  "reverse",
-  "shift",
-  "sort",
-  "splice",
-  "unshift",
-]);
 
 /**
  * Creates a reactive store around a Heimdall contract instance.
  *
- * The returned store exposes helpers that mirror the original contract methods while also
- * enabling React components to subscribe to fine grained updates.
+ * Since 0.3 the store is a thin adapter over the contract's own mutation seam
+ * (subscribeMutations, @ikaru5/heimdall-contract >= 0.11): no proxies, no
+ * method patching, no object-graph instrumentation. Reactive means "mutated
+ * through the explicit API" - store.setValue / contract.setValueAtPath /
+ * assign / isValid. Raw property writes and raw array mutations
+ * (contract.items.push(...)) are deliberately NOT observable; use setValue
+ * with a new array or setValueAtPath addressing the element instead.
  *
- * @param {object} contract A Heimdall contract instance.
+ * @param {object} contract A Heimdall contract instance (>= 0.11).
  * @param {{ onUpdate?: (event: import("./types.js").ContractUpdateEvent) => void }} [options]
  * @returns {import("./types.js").ContractStore}
  */
@@ -37,13 +22,15 @@ export function createContractStore(contract, options = {}) {
   if ("object" !== typeof contract || contract === null) {
     throw new TypeError("createContractStore expects a contract instance");
   }
+  if ("function" !== typeof contract.subscribeMutations) {
+    throw new TypeError(
+      "createContractStore requires @ikaru5/heimdall-contract >= 0.11 (subscribeMutations)",
+    );
+  }
 
   const subscribers = new Map();
   const revisions = new Map();
-  const instrumentedContracts = new WeakSet();
-  const contractProxyCache = new WeakMap();
-  const objectProxyCache = new WeakMap();
-  const arrayProxyCache = new WeakMap();
+
   /**
    * Advances the revision counter for the provided cache key.
    * @param {string} key
@@ -56,7 +43,9 @@ export function createContractStore(contract, options = {}) {
   }
 
   /**
-   * Notifies subscribers about a change at the provided path.
+   * Notifies subscribers about a change at the provided path: the path itself,
+   * its ancestors (their observed subtree changed) and its descendants (their
+   * observed value may have been replaced with the parent).
    * @param {string[]} pathArray
    * @param {import("./types.js").EmitPayload} payload
    */
@@ -80,9 +69,6 @@ export function createContractStore(contract, options = {}) {
       });
     });
 
-    // replacing a value also replaces everything below it, so subscribers at descendant
-    // paths are notified as well - their observed value may have changed with the parent.
-    // The exact flag only guards against noise from descendants, not from ancestors.
     const descendantPrefix = key === ROOT_KEY ? "" : `${key}.`;
     subscribers.forEach((listeners, subscriberKey) => {
       if (visited.has(subscriberKey)) return;
@@ -96,18 +82,6 @@ export function createContractStore(contract, options = {}) {
   }
 
   /**
-   * Ensures that a subscription bucket exists for the provided key.
-   * @param {string} key
-   * @returns {Set<{callback: Function, exact: boolean}>}
-   */
-  function ensureSubscriptionSet(key) {
-    if (!subscribers.has(key)) {
-      subscribers.set(key, new Set());
-    }
-    return subscribers.get(key);
-  }
-
-  /**
    * Subscribes to updates for a given path.
    * @param {string | string[]} [path]
    * @param {(event: import("./types.js").SubscriptionEvent) => void} callback
@@ -116,10 +90,10 @@ export function createContractStore(contract, options = {}) {
    */
   function subscribe(path, callback, opts = {}) {
     const { exact } = { ...DEFAULT_SUBSCRIBE_OPTIONS, ...opts };
-    const normalized = normalizePath(path);
-    const key = pathToKey(normalized);
+    const key = pathToKey(normalizePath(path));
+    if (!subscribers.has(key)) subscribers.set(key, new Set());
     const entry = { callback, exact };
-    const set = ensureSubscriptionSet(key);
+    const set = subscribers.get(key);
     set.add(entry);
     return () => {
       const currentSet = subscribers.get(key);
@@ -129,302 +103,27 @@ export function createContractStore(contract, options = {}) {
     };
   }
 
-  /**
-   * Wraps a Heimdall contract instance to intercept mutation methods.
-   * @param {any} instance
-   * @param {string[]} basePath
-   */
-  function instrumentContract(instance, basePath) {
-    if (!instance || "function" !== typeof instance.setValueAtPath) return;
-    if (instrumentedContracts.has(instance)) return;
-    instrumentedContracts.add(instance);
-
-    const originalSetValueAtPath = instance.setValueAtPath.bind(instance);
-    instance.setValueAtPath = function patchedSetValueAtPath(depth, value, object = this) {
-      const normalizedDepth = depth.map(toPathSegment);
-      const shouldNotify = object === this;
-      const previousValue = shouldNotify ? readAtPath(this, normalizedDepth) : undefined;
-      const result = originalSetValueAtPath(depth, value, object);
-      if (shouldNotify) {
-        const nextValue = readAtPath(this, normalizedDepth);
-        if (!Object.is(previousValue, nextValue)) {
-          const fullPath = basePath.concat(normalizedDepth);
-          captureNestedStructures(nextValue, fullPath);
-          emitChange(fullPath, { type: "set", value: nextValue, previousValue });
-        }
-      }
-      return result;
-    };
-
-    // isValid resets errors and isValidState through plain property writes on the raw
-    // instance, which no proxy trap can observe - so validation runs are announced here.
-    // Newly written errors already notify through the patched setValueAtPath, therefore
-    // an emit is only needed when previous errors might have been cleared by the reset.
-    const originalIsValid = instance.isValid.bind(instance);
-    instance.isValid = function patchedIsValid(context) {
-      const previousErrors = this.errors;
-      const previousState = this.isValidState;
-      const result = originalIsValid(context);
-      const hadErrors = previousErrors && 0 < Object.keys(previousErrors).length;
-      if (hadErrors) {
-        emitChange(basePath.concat("errors"), {
-          type: "validate",
-          value: this.errors,
-          previousValue: previousErrors,
-        });
-      }
-      if (!Object.is(previousState, this.isValidState)) {
-        emitChange(basePath.concat("isValidState"), {
-          type: "validate",
-          value: this.isValidState,
-          previousValue: previousState,
-        });
-      }
-      return result;
-    };
-  }
+  // THE seam: the contract announces every mutation made through its explicit
+  // API (setValueAtPath, assign, isValid -> "errors", bubbled nested changes)
+  const unsubscribeFromContract = contract.subscribeMutations(({ path }) => {
+    const pathArray = path.length ? path.split(".") : [];
+    emitChange(pathArray, { type: "set", value: readAtPath(contract, pathArray) });
+  });
 
   /**
-   * Recursively wraps nested objects, arrays and contract instances so they
-   * participate in change tracking.
-   * @param {unknown} value
-   * @param {string[]} path
-   */
-  function captureNestedStructures(value, path) {
-    if (Array.isArray(value)) {
-      wrapArray(value, path);
-      value.forEach((entry, index) => {
-        const nestedPath = path.concat(toPathSegment(index));
-        captureNestedStructures(entry, nestedPath);
-      });
-      return;
-    }
-
-    if (isContractLike(value)) {
-      instrumentContract(value, path);
-      if (value && value.schema && "object" === typeof value.schema) {
-        Object.keys(value.schema).forEach((key) => {
-          const nestedPath = path.concat(toPathSegment(key));
-          captureNestedStructures(value[key], nestedPath);
-        });
-      }
-      return;
-    }
-
-    if (isPlainObject(value)) {
-      wrapPlainObject(value, path);
-      Object.keys(value).forEach((key) => {
-        const nestedPath = path.concat(toPathSegment(key));
-        captureNestedStructures(value[key], nestedPath);
-      });
-    }
-  }
-
-  /**
-   * Determines whether a candidate looks like a Heimdall contract instance.
-   * @param {unknown} candidate
-   * @returns {boolean}
-   */
-  function isContractLike(candidate) {
-    if (!candidate || "object" !== typeof candidate) return false;
-    return "function" === typeof candidate.assign && "function" === typeof candidate.setValueAtPath;
-  }
-
-  /**
-   * Makes sure that nested structures are wrapped with the appropriate proxy.
-   * @param {unknown} value
-   * @param {string[]} basePath
-   * @returns {unknown}
-   */
-  function ensureInstrumented(value, basePath) {
-    if (Array.isArray(value)) return wrapArray(value, basePath);
-    if (isContractLike(value)) return wrapContract(value, basePath);
-    if (isPlainObject(value)) return wrapPlainObject(value, basePath);
-    return value;
-  }
-
-  /**
-   * Creates a proxy around a contract instance.
-   * @param {any} instance
-   * @param {string[]} basePath
-   * @returns {any}
-   */
-  function wrapContract(instance, basePath) {
-    if (contractProxyCache.has(instance)) return contractProxyCache.get(instance);
-
-    instrumentContract(instance, basePath);
-
-    const proxy = new Proxy(instance, {
-      get(target, property, receiver) {
-        if (typeof property === "symbol") {
-          if (property === RAW_SYMBOL) return target;
-          return Reflect.get(target, property, receiver);
-        }
-        const value = Reflect.get(target, property, receiver);
-        if ("function" === typeof value) return value.bind(target);
-        const propertyPath = basePath.concat(toPathSegment(property));
-        return ensureInstrumented(value, propertyPath);
-      },
-      set(target, property, value, receiver) {
-        if (typeof property === "symbol") {
-          return Reflect.set(target, property, value, receiver);
-        }
-        const propertyPath = basePath.concat(toPathSegment(property));
-        const previousValue = Reflect.get(target, property, receiver);
-        const didSet = Reflect.set(target, property, value, receiver);
-        if (didSet && !Object.is(previousValue, value)) {
-          captureNestedStructures(value, propertyPath);
-          emitChange(propertyPath, { type: "set", value, previousValue });
-        }
-        return didSet;
-      },
-      deleteProperty(target, property) {
-        if (typeof property === "symbol") {
-          return Reflect.deleteProperty(target, property);
-        }
-        if (!Object.prototype.hasOwnProperty.call(target, property)) return true;
-        const propertyPath = basePath.concat(toPathSegment(property));
-        const previousValue = target[property];
-        const didDelete = Reflect.deleteProperty(target, property);
-        if (didDelete) emitChange(propertyPath, { type: "delete", previousValue });
-        return didDelete;
-      },
-    });
-
-    contractProxyCache.set(instance, proxy);
-    return proxy;
-  }
-
-  /**
-   * Creates a proxy around a plain object so assignments trigger notifications.
-   * @param {Record<string, unknown>} target
-   * @param {string[]} basePath
-   * @returns {Record<string, unknown>}
-   */
-  function wrapPlainObject(target, basePath) {
-    if (objectProxyCache.has(target)) return objectProxyCache.get(target);
-
-    const proxy = new Proxy(target, {
-      get(obj, property, receiver) {
-        if (typeof property === "symbol") {
-          if (property === RAW_SYMBOL) return obj;
-          return Reflect.get(obj, property, receiver);
-        }
-        const value = Reflect.get(obj, property, receiver);
-        const propertyPath = basePath.concat(toPathSegment(property));
-        return ensureInstrumented(value, propertyPath);
-      },
-      set(obj, property, value, receiver) {
-        if (typeof property === "symbol") {
-          return Reflect.set(obj, property, value, receiver);
-        }
-        const propertyPath = basePath.concat(toPathSegment(property));
-        const previousValue = Reflect.get(obj, property, receiver);
-        const didSet = Reflect.set(obj, property, value, receiver);
-        if (didSet && !Object.is(previousValue, value)) {
-          captureNestedStructures(value, propertyPath);
-          emitChange(propertyPath, { type: "set", value, previousValue });
-        }
-        return didSet;
-      },
-      deleteProperty(obj, property) {
-        if (typeof property === "symbol") {
-          return Reflect.deleteProperty(obj, property);
-        }
-        if (!Object.prototype.hasOwnProperty.call(obj, property)) return true;
-        const propertyPath = basePath.concat(toPathSegment(property));
-        const previousValue = obj[property];
-        const didDelete = Reflect.deleteProperty(obj, property);
-        if (didDelete) emitChange(propertyPath, { type: "delete", previousValue });
-        return didDelete;
-      },
-    });
-
-    objectProxyCache.set(target, proxy);
-    return proxy;
-  }
-
-  /**
-   * Creates a proxy around an array so updates to its items trigger notifications.
-   * @param {unknown[]} target
-   * @param {string[]} basePath
-   * @returns {unknown[]}
-   */
-  function wrapArray(target, basePath) {
-    target.forEach((entry, index) => {
-      const nestedPath = basePath.concat(toPathSegment(index));
-      captureNestedStructures(entry, nestedPath);
-    });
-
-    if (arrayProxyCache.has(target)) return arrayProxyCache.get(target);
-
-    const proxy = new Proxy(target, {
-      get(arr, property, receiver) {
-        if (typeof property === "symbol") {
-          if (property === RAW_SYMBOL) return arr;
-          return Reflect.get(arr, property, receiver);
-        }
-        const value = Reflect.get(arr, property, receiver);
-        if ("function" === typeof value) {
-          if (!MUTATING_ARRAY_METHODS.has(property)) {
-            return value.bind(arr);
-          }
-          return (...args) => {
-            const result = value.apply(arr, args);
-            captureNestedStructures(arr, basePath);
-            emitChange(basePath, { type: "mutate", value: proxy });
-            return result;
-          };
-        }
-        const propertyPath = basePath.concat(toPathSegment(property));
-        return ensureInstrumented(value, propertyPath);
-      },
-      set(arr, property, value, receiver) {
-        if (typeof property === "symbol") {
-          return Reflect.set(arr, property, value, receiver);
-        }
-        const propertyPath = basePath.concat(toPathSegment(property));
-        const previousValue = Reflect.get(arr, property, receiver);
-        const didSet = Reflect.set(arr, property, value, receiver);
-        if (didSet && !Object.is(previousValue, value)) {
-          captureNestedStructures(value, propertyPath);
-          emitChange(propertyPath, { type: "set", value, previousValue });
-        }
-        return didSet;
-      },
-      deleteProperty(arr, property) {
-        if (typeof property === "symbol") {
-          return Reflect.deleteProperty(arr, property);
-        }
-        if (!Object.prototype.hasOwnProperty.call(arr, property)) return true;
-        const propertyPath = basePath.concat(toPathSegment(property));
-        const previousValue = arr[property];
-        const didDelete = Reflect.deleteProperty(arr, property);
-        if (didDelete) emitChange(propertyPath, { type: "delete", previousValue });
-        return didDelete;
-      },
-    });
-
-    arrayProxyCache.set(target, proxy);
-    return proxy;
-  }
-
-  captureNestedStructures(contract, []);
-  const proxiedContract = wrapContract(contract, []);
-
-  /**
-   * Retrieves a value from the proxied contract.
+   * Retrieves the raw value at a path (the contract itself without a path).
    * @param {string | string[]} [path]
    * @returns {unknown}
    */
   function getValue(path) {
     const normalized = normalizePath(path);
-    if (!normalized.length) return proxiedContract;
-    return readAtPath(proxiedContract, normalized);
+    if (!normalized.length) return contract;
+    return readAtPath(contract, normalized);
   }
 
   /**
-   * Mutates the underlying contract at the specified path.
+   * Mutates the underlying contract at the specified path - the reactive way
+   * to write. The contract's mutation seam notifies all subscribers.
    * @param {string | string[]} path
    * @param {unknown} value
    * @returns {unknown}
@@ -442,20 +141,23 @@ export function createContractStore(contract, options = {}) {
    * @returns {number}
    */
   function getRevision(path) {
-    const normalized = normalizePath(path);
-    return revisions.get(pathToKey(normalized)) || 0;
+    return revisions.get(pathToKey(normalizePath(path))) || 0;
   }
 
   return {
-    contract: proxiedContract,
+    contract,
     subscribe,
     getValue,
     setValue,
     getRevision,
     assign: (...args) => contract.assign(...args),
     isValid: (...args) => contract.isValid(...args),
-    getContract: () => proxiedContract,
+    getContract: () => contract,
     getOriginalContract: () => contract,
+    destroy: () => {
+      unsubscribeFromContract();
+      subscribers.clear();
+    },
   };
 }
 

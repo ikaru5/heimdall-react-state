@@ -2,7 +2,7 @@
  * Describes the payload sent when notifying subscribers.
  *
  * @typedef {Object} EmitPayload
- * @property {"set" | "delete" | "mutate" | "validate"} type
+ * @property {"set"} type
  * @property {unknown} [value]
  * @property {unknown} [previousValue]
  */
@@ -47,6 +47,7 @@
  * @property {(...args: unknown[]) => unknown} isValid
  * @property {() => unknown} getContract
  * @property {() => unknown} getOriginalContract
+ * @property {() => void} destroy
  */
 
 export {};

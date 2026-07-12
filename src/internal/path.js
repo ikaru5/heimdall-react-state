@@ -5,12 +5,6 @@
 export const ROOT_KEY = "";
 
 /**
- * Symbol that exposes access to the underlying value when a proxy wraps it.
- * @type {symbol}
- */
-export const RAW_SYMBOL = Symbol.for("heimdall-react-state.raw");
-
-/**
  * Converts a path segment into a string representation that can be used as an object key.
  * @param {string | number | null | undefined} segment
  * @returns {string}

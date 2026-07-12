@@ -5,6 +5,49 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-12
+
+The store is now a thin adapter over the contract's own mutation seam
+(`subscribeMutations`, new in `@ikaru5/heimdall-contract` 0.11) instead of wrapping the
+contract's object graph in proxies. Reactive now means: mutated through the explicit
+contract API. This removes an entire class of correctness bugs - in-place array mutations
+that never re-rendered (`Object.is` saw the same reference), proxy caches serving stale
+paths after `reverse()`, and uncached `getSnapshot` results fighting React's caching
+contract.
+
+### Changed
+
+- **BREAKING**: peer dependency raised to `@ikaru5/heimdall-contract >= 0.11` - the store
+  throws without `subscribeMutations`.
+- **BREAKING**: `store.contract` / `getContract()` / `getValue()` return the **raw**
+  contract and raw values - there are no proxies anymore. Raw property writes
+  (`store.contract.name = "Ada"`) and raw array mutations (`items.push(...)`) no longer
+  notify subscribers. Write through `store.setValue`, `contract.setValueAtPath` or
+  `assign` - those notify, **including in-place array mutations through the explicit API**
+  (which 0.2 silently swallowed because the reference stayed identical).
+- **BREAKING**: `useContractValue` and `useContractErrors` no longer default `equalityFn`
+  to `Object.is` - every notification on the observed path re-renders. Pass an
+  `equalityFn` explicitly to suppress re-renders. `useContractSelector` also defaults to
+  re-rendering per store change; opt into `Object.is` for primitive selections.
+- **BREAKING**: `isValidState` subscriptions no longer fire. Every `isValid()` run
+  announces itself on the `"errors"` path instead (also when the run leaves the errors
+  unchanged) - subscribe there, or read `contract.isValidState` from an `"errors"`
+  subscription.
+- Hook snapshots are cached per notification (tick cells): selectors may return fresh
+  objects without violating React's `getSnapshot` caching contract, and same-reference
+  values can never suppress a legitimate re-render again.
+
+### Added
+
+- `store.destroy()`: detaches the store from the contract's mutation seam and clears all
+  subscribers. Call it when replacing a store to avoid leaking the subscription.
+
+### Removed
+
+- All proxy machinery (`RAW_SYMBOL`, proxy caches, array-method patching,
+  `setValueAtPath`/`isValid` monkey-patching). The contract instance is left completely
+  untouched.
+
 ## [0.2.0] - 2026-07-03
 
 ### Changed

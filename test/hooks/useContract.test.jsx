@@ -22,7 +22,7 @@ describe("useContract", () => {
     });
   });
 
-  it("returns the proxied contract and re-renders on revisions", async () => {
+  it("returns the raw contract and re-renders on store changes", async () => {
     const contract = new ProfileContract();
     contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
@@ -35,20 +35,20 @@ describe("useContract", () => {
     );
 
     expect(renders).toHaveLength(1);
-    const firstRenderContract = renders[0];
-    expect(firstRenderContract).toBe(store.getContract());
+    expect(renders[0]).toBe(contract);
+    expect(renders[0]).toBe(store.getContract());
 
     await act(async () => {
-      store.contract.profile.firstName = "Grace";
+      store.setValue("profile.firstName", "Grace");
     });
     expect(renders).toHaveLength(2);
-    expect(renders[1]).toBe(firstRenderContract);
+    expect(renders[1]).toBe(contract);
 
     await act(async () => {
-      store.contract.profile.bio = "Rear Admiral";
+      store.setValue("profile.bio", "Rear Admiral");
     });
     expect(renders).toHaveLength(3);
-    expect(renders[2]).toBe(firstRenderContract);
+    expect(renders[2]).toBe(contract);
 
     unmount();
   });

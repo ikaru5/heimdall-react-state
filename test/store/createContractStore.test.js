@@ -2,25 +2,31 @@ import { describe, expect, it, jest } from "@jest/globals";
 import Contract from "@ikaru5/heimdall-contract";
 
 import { createContractStore } from "../../src/createContractStore.js";
-import { RAW_SYMBOL } from "../../src/internal/path.js";
-import { AddressContract, ProfileContract, ProjectContract } from "../helpers/contracts.js";
+import { ProfileContract, ProjectContract } from "../helpers/contracts.js";
 
 describe("createContractStore", () => {
   it("throws when provided value is not a contract", () => {
     expect(() => createContractStore(null)).toThrow(TypeError);
   });
 
-  it("exposes proxied and original contracts", () => {
+  it("throws when the contract lacks the mutation seam", () => {
+    const legacyContract = { assign() {}, isValid: () => true, setValueAtPath() {} };
+    expect(() => createContractStore(legacyContract)).toThrow(
+      "requires @ikaru5/heimdall-contract >= 0.11",
+    );
+  });
+
+  it("exposes the raw contract", () => {
     const contract = new ProfileContract();
     contract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
     const store = createContractStore(contract);
 
-    expect(store.contract).not.toBe(contract);
-    expect(store.getContract()).toBe(store.contract);
+    expect(store.contract).toBe(contract);
+    expect(store.getContract()).toBe(contract);
     expect(store.getOriginalContract()).toBe(contract);
-    expect(store.getValue()).toBe(store.contract);
+    expect(store.getValue()).toBe(contract);
     expect(store.getValue("profile.lastName")).toBe("Lovelace");
   });
 
@@ -55,18 +61,19 @@ describe("createContractStore", () => {
       exact: true,
     });
 
-    store.contract.profile.firstName = "Grace";
-    store.contract.profile.lastName = "Hopper";
+    store.setValue("profile.firstName", "Grace");
+    store.setValue("profile.lastName", "Hopper");
 
     expect(firstNameListener).toHaveBeenCalledTimes(1);
     expect(profileListener).toHaveBeenCalledTimes(2);
     expect(exactProfileListener).not.toHaveBeenCalled();
 
     unsubscribeFirst();
+    unsubscribeFirst();
     unsubscribeProfile();
     unsubscribeExactProfile();
 
-    store.contract.profile.bio = "Rear Admiral";
+    store.setValue("profile.bio", "Rear Admiral");
 
     expect(firstNameListener).toHaveBeenCalledTimes(1);
     expect(profileListener).toHaveBeenCalledTimes(2);
@@ -83,11 +90,11 @@ describe("createContractStore", () => {
     expect(store.getRevision()).toBe(0);
     expect(store.getRevision("profile.firstName")).toBe(0);
 
-    store.contract.profile.firstName = "Grace";
+    store.setValue("profile.firstName", "Grace");
     expect(store.getRevision("profile.firstName")).toBe(1);
     expect(store.getRevision("profile")).toBe(1);
 
-    store.contract.profile.lastName = "Hopper";
+    store.setValue("profile.lastName", "Hopper");
     expect(store.getRevision()).toBe(2);
   });
 
@@ -99,7 +106,7 @@ describe("createContractStore", () => {
     const onUpdate = jest.fn();
     const store = createContractStore(contract, { onUpdate });
 
-    store.contract.profile.bio = "Rear Admiral";
+    store.setValue("profile.bio", "Rear Admiral");
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     expect(onUpdate).toHaveBeenCalledWith(
@@ -112,7 +119,7 @@ describe("createContractStore", () => {
     );
   });
 
-  it("reacts to array mutations and reassignments", () => {
+  it("stays silent for raw writes but notifies explicit in-place mutations", () => {
     const contract = new ProjectContract();
     contract.assign({
       project: { tasks: ["initial"], metadata: { owner: "Ada" } },
@@ -120,223 +127,113 @@ describe("createContractStore", () => {
     const store = createContractStore(contract);
 
     const taskListener = jest.fn();
-    const metadataListener = jest.fn();
-
     store.subscribe("project.tasks", taskListener);
-    store.subscribe("project.metadata.theme", metadataListener);
 
-    store.contract.project.tasks.push("refactor");
+    // deliberately NOT observable: raw property writes and raw array mutations
+    contract.project.metadata.owner = "Grace";
+    contract.project.tasks.push("raw push");
+    expect(taskListener).not.toHaveBeenCalled();
+
+    // the explicit API notifies even when it mutates the same array instance
+    const tasksBefore = store.getValue("project.tasks");
+    store.setValue("project.tasks.1", "explicit");
+    expect(store.getValue("project.tasks")).toBe(tasksBefore);
     expect(taskListener).toHaveBeenCalledTimes(1);
-    expect(store.getValue("project.tasks")).toEqual(["initial", "refactor"]);
+    expect(store.getValue("project.tasks")).toEqual(["initial", "explicit"]);
 
-    store.contract.project.tasks = ["deploy"];
+    // replacing the whole array notifies as well
+    store.setValue("project.tasks", ["deploy"]);
     expect(taskListener).toHaveBeenCalledTimes(2);
     expect(store.getValue("project.tasks")).toEqual(["deploy"]);
-
-    store.contract.project.metadata.theme = "dark";
-    expect(metadataListener).toHaveBeenCalledTimes(1);
-    expect(store.getValue("project.metadata.theme")).toBe("dark");
-
-    delete store.contract.project.metadata.theme;
-    expect(metadataListener).toHaveBeenCalledTimes(2);
   });
 
-  it("instruments nested contracts when assigning them dynamically", () => {
-    const dynamicSchema = {
-      company: {
-        dType: "Contract",
-        contract: {
-          name: { dType: "String" },
-          address: { dType: "Generic" },
-        },
-      },
-    };
-    class CompanyContract extends Contract {
-      defineSchema() {
-        return dynamicSchema;
-      }
-    }
-    const contract = new CompanyContract();
+  it("bubbles mutations made directly on nested contract instances", () => {
+    const contract = new ProfileContract();
     contract.assign({
-      company: { name: "ACME", address: { street: "Main" } },
-    });
-    const store = createContractStore(contract);
-
-    const addressListener = jest.fn();
-    store.subscribe("company.address.street", addressListener);
-
-    store.contract.company.address.city = "Metropolis";
-    expect(addressListener).not.toHaveBeenCalled();
-
-    store.contract.company.address.street = "Elm";
-    expect(addressListener).toHaveBeenCalledTimes(1);
-
-    const branchContract = new AddressContract();
-    branchContract.assign({
-      address: { street: "Side", city: "Gotham", zip: "10001" },
-      country: "US",
-    });
-    const branchAddress = branchContract.address;
-
-    // replacing the parent changes the observed street ("Elm" -> "Side"), so the child subscriber is notified
-    store.contract.company.address = branchAddress;
-    expect(addressListener).toHaveBeenCalledTimes(2);
-
-    store.contract.company.address.street = "Park";
-    expect(addressListener).toHaveBeenCalledTimes(3);
-  });
-
-  it("captures nested arrays inside generics", () => {
-    const schema = {
-      catalog: {
-        dType: "Generic",
-      },
-    };
-    class CatalogContract extends Contract {
-      defineSchema() {
-        return schema;
-      }
-    }
-    const contract = new CatalogContract();
-    contract.assign({
-      catalog: { books: ["Refactoring"] },
-    });
-    const store = createContractStore(contract);
-
-    const listener = jest.fn();
-    store.subscribe("catalog.books", listener);
-
-    store.contract.catalog.books.unshift("Domain-Driven Design");
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(store.getValue("catalog.books")).toEqual(["Domain-Driven Design", "Refactoring"]);
-
-    store.contract.catalog.books[1] = "Patterns of Enterprise Application Architecture";
-    expect(listener).toHaveBeenCalledTimes(2);
-  });
-
-  it("exposes raw values through symbols and reuses proxies", () => {
-    const contract = new ProjectContract();
-    contract.assign({
-      project: { tasks: ["initial"], metadata: { owner: "Ada" } },
-    });
-    const store = createContractStore(contract);
-
-    const projectProxy = store.contract.project;
-    expect(projectProxy[RAW_SYMBOL]).toBe(contract.project);
-    expect(store.contract.project).toBe(projectProxy);
-
-    const metadataProxy = projectProxy.metadata;
-    expect(metadataProxy[RAW_SYMBOL]).toBe(contract.project.metadata);
-    expect(projectProxy.metadata).toBe(metadataProxy);
-
-    const tasksProxy = projectProxy.tasks;
-    expect(tasksProxy[RAW_SYMBOL]).toBe(contract.project.tasks);
-    expect(projectProxy.tasks).toBe(tasksProxy);
-  });
-
-  it("propagates deletions for contract and array fields", () => {
-    const contract = new ProjectContract();
-    contract.assign({
-      project: { tasks: ["initial", "todo"], metadata: { owner: "Ada" } },
-    });
-    const store = createContractStore(contract);
-
-    const taskEvents = [];
-    store.subscribe("project.tasks.1", (event) => taskEvents.push(event.type));
-
-    store.contract.project.tasks[1] = "updated";
-    expect(taskEvents).toEqual(["set"]);
-
-    store.contract.project.tasks.push("extra");
-    const deleteEvents = [];
-    store.subscribe("project.tasks.2", (event) => deleteEvents.push(event.type));
-    delete store.contract.project.tasks[2];
-    expect(deleteEvents).toEqual(["delete"]);
-
-    const contractEvents = [];
-    store.subscribe("project.metadata.owner", (event) => contractEvents.push(event.type));
-    delete store.contract.project.metadata.owner;
-    expect(contractEvents).toEqual(["delete"]);
-
-    const profileContract = new ProfileContract();
-    profileContract.assign({
       profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
     });
-    const profileStore = createContractStore(profileContract);
-    const bioEvents = [];
-    profileStore.subscribe("profile.bio", (event) => bioEvents.push(event.type));
-    delete profileStore.contract.profile.bio;
-    expect(bioEvents).toEqual(["delete"]);
+    const store = createContractStore(contract);
+
+    const firstNameListener = jest.fn();
+    store.subscribe("profile.firstName", firstNameListener);
+
+    contract.profile.setValueAtPath(["firstName"], "Grace");
+
+    expect(firstNameListener).toHaveBeenCalledTimes(1);
+    expect(store.getValue("profile.firstName")).toBe("Grace");
   });
 
-  it("handles symbol keyed operations and method binding", () => {
+  it("notifies subscribers when assign writes values", () => {
     const contract = new ProjectContract();
     contract.assign({
-      project: { tasks: ["initial"], metadata: { owner: "Ada" } },
+      project: { tasks: ["one", "two", "three"], metadata: { owner: "Ada" } },
     });
     const store = createContractStore(contract);
 
-    const assign = store.contract.assign;
-    expect(typeof assign).toBe("function");
-    assign({ project: { metadata: { owner: "Grace" } } });
-    expect(store.getValue("project.metadata.owner")).toBe("Grace");
+    const taskListener = jest.fn();
+    store.subscribe("project.tasks", taskListener);
 
-    const symbolKey = Symbol("custom");
-    store.contract[symbolKey] = "root";
-    expect(store.contract[symbolKey]).toBe("root");
-    delete store.contract[symbolKey];
-    expect(store.contract[symbolKey]).toBeUndefined();
+    // shrinking arrays notifies through the truncation seam in assign
+    store.assign({ project: { tasks: ["only"] } });
 
-    const metadata = store.contract.project.metadata;
-    metadata[symbolKey] = "meta";
-    expect(metadata[symbolKey]).toBe("meta");
-    delete metadata[symbolKey];
-    expect(metadata[symbolKey]).toBeUndefined();
+    expect(taskListener).toHaveBeenCalled();
+    expect(store.getValue("project.tasks")).toEqual(["only"]);
+  });
 
-    const tasks = store.contract.project.tasks;
-    tasks[symbolKey] = "tag";
-    expect(tasks[symbolKey]).toBe("tag");
-    delete tasks[symbolKey];
-    expect(tasks[symbolKey]).toBeUndefined();
+  it("stays silent when setValueAtPath targets a foreign object", () => {
+    const contract = new ProjectContract();
+    contract.assign({ project: { tasks: [], metadata: {} } });
+    const store = createContractStore(contract);
+
+    const rootListener = jest.fn();
+    store.subscribe(undefined, rootListener);
+
+    const foreignTarget = {};
+    contract.setValueAtPath(["field"], "external", foreignTarget);
+
+    expect(foreignTarget.field).toBe("external");
+    expect(rootListener).not.toHaveBeenCalled();
+  });
+
+  it("works with duck-typed contracts that provide the mutation seam", () => {
+    const callbacks = new Set();
+    const duck = {
+      assign: jest.fn(),
+      isValid: jest.fn(),
+      subscribeMutations(callback) {
+        callbacks.add(callback);
+        return () => callbacks.delete(callback);
+      },
+      setValueAtPath(depth, value) {
+        this[depth[0]] = value;
+        callbacks.forEach((callback) => callback({ path: depth.join(".") }));
+      },
+    };
+    const store = createContractStore(duck);
 
     const listener = jest.fn();
-    const unsubscribe = store.subscribe("project.metadata.owner", listener);
-    unsubscribe();
-    unsubscribe();
-    store.contract.project.metadata.owner = "Ada";
+    store.subscribe("field", listener);
+
+    store.setValue("field", "internal");
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.getValue("field")).toBe("internal");
+  });
+
+  it("detaches from the contract on destroy", () => {
+    const contract = new ProfileContract();
+    contract.assign({
+      profile: { firstName: "Ada", lastName: "Lovelace", bio: "Pioneer" },
+    });
+    const store = createContractStore(contract);
+
+    const listener = jest.fn();
+    store.subscribe("profile.firstName", listener);
+
+    store.destroy();
+    contract.setValueAtPath(["profile", "firstName"], "Grace");
+
     expect(listener).not.toHaveBeenCalled();
-  });
-
-  it("ignores deletions for missing properties across proxies", () => {
-    const contract = new ProjectContract();
-    contract.assign({
-      project: { tasks: ["initial"], metadata: { owner: "Ada" } },
-    });
-    const store = createContractStore(contract);
-
-    expect(delete store.contract.project.archived).toBe(true);
-
-    const metadata = store.contract.project.metadata;
-    expect(delete metadata.archived).toBe(true);
-
-    const tasks = store.contract.project.tasks;
-    expect(delete tasks[3]).toBe(true);
-  });
-
-  it("binds non mutating array methods and reuses cached proxies", () => {
-    const contract = new ProjectContract();
-    contract.assign({
-      project: { tasks: ["initial", "todo"], metadata: { owner: "Ada" } },
-    });
-    const store = createContractStore(contract);
-
-    const tasks = store.contract.project.tasks;
-    const slice = tasks.slice;
-    expect(slice()).toEqual(["initial", "todo"]);
-
-    const map = store.contract.project.tasks.map;
-    expect(map((entry) => entry)).toEqual(["initial", "todo"]);
-    expect(store.contract.project.tasks).toBe(tasks);
+    expect(contract.profile.firstName).toBe("Grace");
   });
 
   it("delegates helper methods to the underlying contract", () => {
@@ -362,9 +259,7 @@ describe("createContractStore", () => {
 
   it("deduplicates notifications when path segments collapse to the root", () => {
     const contract = new ProjectContract();
-    contract.assign({
-      project: {},
-    });
+    contract.assign({ project: {} });
     const store = createContractStore(contract);
 
     const rootListener = jest.fn();
@@ -373,64 +268,16 @@ describe("createContractStore", () => {
     store.subscribe(undefined, rootListener);
     store.subscribe("", emptyKeyListener);
 
-    store.contract[""] = { placeholder: true };
+    contract.setValueAtPath([""], { placeholder: true });
 
     expect(rootListener).toHaveBeenCalledTimes(1);
     expect(emptyKeyListener).toHaveBeenCalledTimes(1);
-  });
 
-  it("skips instrumentation when setValueAtPath is not a function", () => {
-    const contract = { assign: jest.fn(), isValid: jest.fn(), setValueAtPath: null };
-    const store = createContractStore(contract);
+    // an empty leading segment makes "" and the root collapse to the same key
+    contract.setValueAtPath(["", "nested"], true);
 
-    expect(store.contract.setValueAtPath).toBeNull();
-
-    store.contract.placeholder = "value";
-    expect(contract.placeholder).toBe("value");
-  });
-
-  it("does not emit updates when patched setValueAtPath targets a foreign object", () => {
-    const assignValue = (target, segments, value) => {
-      if (!segments.length) {
-        return value;
-      }
-      const [head, ...rest] = segments;
-      if (rest.length === 0) {
-        target[head] = value;
-        return value;
-      }
-      if (!target[head] || typeof target[head] !== "object") {
-        target[head] = {};
-      }
-      return assignValue(target[head], rest, value);
-    };
-
-    const buildContract = () => {
-      const base = {};
-      base.assign = jest.fn();
-      base.isValid = jest.fn();
-      base.setValueAtPath = jest.fn((segments, value, target = base) =>
-        assignValue(target, segments, value),
-      );
-      return base;
-    };
-
-    const contract = buildContract();
-    const store = createContractStore(contract);
-    const listener = jest.fn();
-    store.subscribe("field", listener);
-
-    const foreignTarget = {};
-    contract.setValueAtPath(["field"], "external", foreignTarget);
-
-    expect(foreignTarget.field).toBe("external");
-    expect(contract.field).toBeUndefined();
-    expect(listener).not.toHaveBeenCalled();
-
-    contract.setValueAtPath(["field"], "internal");
-
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(store.getValue("field")).toBe("internal");
+    expect(rootListener).toHaveBeenCalledTimes(2);
+    expect(emptyKeyListener).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -447,46 +294,24 @@ describe("validation notifications", () => {
     }
   }
 
-  it("notifies errors subscribers when errors appear and when they clear", () => {
+  it("announces every validation run on the errors path", () => {
     const store = createContractStore(new ValidatedContract());
     const errorsListener = jest.fn();
     store.subscribe("errors", errorsListener);
 
-    // appearing errors notify through the patched setValueAtPath writes
     expect(store.isValid()).toBe(false);
-    const callsAfterInvalidRun = errorsListener.mock.calls.length;
-    expect(callsAfterInvalidRun).toBeGreaterThan(0);
+    expect(errorsListener).toHaveBeenCalledTimes(1);
     expect(store.getOriginalContract().errors.fields.email.issues).toHaveLength(2);
 
+    // plain field writes do not touch the errors subscription
     store.setValue("email", "ada@example.com");
     store.setValue("nested.name", "Ada");
-    expect(errorsListener).toHaveBeenCalledTimes(callsAfterInvalidRun);
+    expect(errorsListener).toHaveBeenCalledTimes(1);
 
-    // becoming valid clears the errors object through a plain write - the store must still notify
+    // every run announces itself - also the one that clears the errors
     expect(store.isValid()).toBe(true);
-    expect(errorsListener).toHaveBeenCalledTimes(callsAfterInvalidRun + 1);
+    expect(errorsListener).toHaveBeenCalledTimes(2);
     expect(store.getOriginalContract().errors).toStrictEqual({});
-
-    // valid to valid changes nothing and stays silent
-    expect(store.isValid()).toBe(true);
-    expect(errorsListener).toHaveBeenCalledTimes(callsAfterInvalidRun + 1);
-  });
-
-  it("notifies isValidState subscribers only when the state changes", () => {
-    const store = createContractStore(new ValidatedContract());
-    const stateListener = jest.fn();
-    store.subscribe("isValidState", stateListener);
-
-    store.isValid();
-    expect(stateListener).toHaveBeenCalledTimes(1); // undefined -> false
-
-    store.isValid();
-    expect(stateListener).toHaveBeenCalledTimes(1); // false -> false stays silent
-
-    store.setValue("email", "ada@example.com");
-    store.setValue("nested.name", "Ada");
-    store.isValid();
-    expect(stateListener).toHaveBeenCalledTimes(2); // false -> true
   });
 
   it("notifies nested error paths when a parent validation runs", () => {
@@ -530,7 +355,7 @@ describe("descendant notifications", () => {
     store.subscribe("unrelated.path", siblingListener);
     store.subscribe("profile", profileListener);
 
-    store.contract.profile = { firstName: "Grace", lastName: "Hopper", bio: "Rear Admiral" };
+    store.setValue("profile", { firstName: "Grace", lastName: "Hopper", bio: "Rear Admiral" });
 
     // the exact flag only guards against descendant noise - an ancestor replacement changes the value
     expect(firstNameListener).toHaveBeenCalledTimes(1);

@@ -1,16 +1,9 @@
-import { useCallback, useMemo } from "react";
-import { useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { normalizePath, pathToKey, readAtPath } from "./internal/path.js";
 
 const STORE_ERROR = "requires a store created by createContractStore";
-
-const getContractProxy = (store) => {
-  if (store && "function" === typeof store.getContract) {
-    return store.getContract();
-  }
-  return store ? store.contract : undefined;
-};
+const UNSET = Symbol("unset");
 
 const assertValidStore = (store, hookName) => {
   if (!store || "function" !== typeof store.subscribe || "function" !== typeof store.getRevision) {
@@ -19,7 +12,53 @@ const assertValidStore = (store, hookName) => {
 };
 
 /**
- * Subscribes to the result of a selector that receives the proxied contract instance.
+ * Resolves the contract instance behind a store, tolerating duck-typed stores
+ * that only expose one of the accessors.
+ * @param {import("./types.js").ContractStore | undefined} store
+ * @returns {unknown}
+ */
+const contractOf = (store) => {
+  if (!store) return undefined;
+  if ("function" === typeof store.getOriginalContract) return store.getOriginalContract();
+  if ("function" === typeof store.getContract) return store.getContract();
+  return store.contract;
+};
+
+/**
+ * Shared snapshot mechanics: a notification advances the cell's tick, and
+ * getSnapshot builds a fresh { value } box exactly once per tick. The box
+ * identity changes with every relevant notification (so in-place mutations
+ * through the explicit API still re-render - Object.is can never swallow
+ * them) and stays stable between notifications (so React's "getSnapshot
+ * should be cached" contract holds even for values rebuilt on every read).
+ */
+const createCell = () => ({ tick: 0, renderedTick: -1, snapshot: undefined, lastValue: UNSET });
+
+const readCell = (cell, readCurrent) => {
+  if (cell.renderedTick !== cell.tick) {
+    cell.lastValue = readCurrent();
+    cell.snapshot = { value: cell.lastValue };
+    cell.renderedTick = cell.tick;
+  }
+  return cell.snapshot;
+};
+
+const advanceCell = (cell, readCurrent, equalityFn, onStoreChange) => {
+  const nextValue = readCurrent();
+  if (equalityFn && cell.lastValue !== UNSET && equalityFn(cell.lastValue, nextValue)) return;
+  cell.lastValue = nextValue;
+  cell.tick += 1;
+  onStoreChange();
+};
+
+/**
+ * Subscribes to the result of a selector that receives the contract instance.
+ *
+ * The selector may return fresh objects - snapshots are cached per
+ * notification, not per call. By default every store change re-renders;
+ * provide an equalityFn (e.g. Object.is for primitive selections) to suppress
+ * re-renders for results you consider equal. Memoize the selector, otherwise
+ * the hook resubscribes on every render.
  *
  * @template T
  * @param {import("./types.js").ContractStore} store
@@ -31,35 +70,29 @@ export const useContractSelector = (store, selector, options = {}) => {
   assertValidStore(store, "useContractSelector");
   if ("function" !== typeof selector) throw new TypeError("selector must be a function");
 
-  const equalityFn = options.equalityFn ?? Object.is;
+  const equalityFn = options.equalityFn;
+
+  const cell = useMemo(createCell, [store, selector, equalityFn]);
+  const readCurrent = useCallback(() => selector(contractOf(store)), [store, selector]);
 
   const subscribe = useCallback(
-    (onStoreChange) => {
-      let previousValue = selector(getContractProxy(store));
-      let previousRevision = store.getRevision();
-      return store.subscribe(undefined, () => {
-        const nextValue = selector(getContractProxy(store));
-        const nextRevision = store.getRevision();
-        const valuesEqual = equalityFn(previousValue, nextValue);
-        if (nextRevision !== previousRevision || !valuesEqual) {
-          previousRevision = nextRevision;
-          previousValue = nextValue;
-          if (!valuesEqual) {
-            onStoreChange();
-          }
-        }
-      });
-    },
-    [store, selector, equalityFn],
+    (onStoreChange) =>
+      store.subscribe(undefined, () => advanceCell(cell, readCurrent, equalityFn, onStoreChange)),
+    [store, readCurrent, equalityFn, cell],
   );
 
-  const getSnapshot = useCallback(() => selector(getContractProxy(store)), [store, selector]);
+  const getSnapshot = useCallback(() => readCell(cell, readCurrent), [cell, readCurrent]);
 
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot).value;
 };
 
 /**
- * Reads a value from the contract at the provided path and subscribes to updates.
+ * Reads the value at a path and subscribes to its updates.
+ *
+ * Every notification on the path re-renders - including in-place mutations
+ * made through the explicit contract API (setValue addressing an element of
+ * an existing array, assign truncation, ...). Provide an equalityFn only if
+ * you want to suppress re-renders for values you consider equal.
  *
  * @template T
  * @param {import("./types.js").ContractStore} store
@@ -73,41 +106,32 @@ export const useContractSelector = (store, selector, options = {}) => {
 export const useContractValue = (store, path, options = {}) => {
   assertValidStore(store, "useContractValue");
 
-  const equalityFn = options.equalityFn ?? Object.is;
+  const equalityFn = options.equalityFn;
   const exact = Boolean(options.exact);
 
-  const normalizedPath = useMemo(() => normalizePath(path), [path]);
-  const pathKey = useMemo(() => pathToKey(normalizedPath), [normalizedPath]);
-  const getSnapshot = useCallback(
-    () => readAtPath(getContractProxy(store), normalizedPath),
+  // key first: inline array paths get a stable identity via their string form
+  const pathKey = pathToKey(normalizePath(path));
+  const normalizedPath = useMemo(() => normalizePath(path), [pathKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cell = useMemo(createCell, [store, pathKey, equalityFn, exact]);
+
+  const readCurrent = useCallback(
+    () => readAtPath(contractOf(store), normalizedPath),
     [store, normalizedPath],
   );
 
   const subscribe = useCallback(
-    (onStoreChange) => {
-      let previousValue = readAtPath(getContractProxy(store), normalizedPath);
-      let previousRevision = store.getRevision(pathKey);
-      return store.subscribe(
+    (onStoreChange) =>
+      store.subscribe(
         normalizedPath,
-        () => {
-          const nextValue = readAtPath(getContractProxy(store), normalizedPath);
-          const nextRevision = store.getRevision(pathKey);
-          const valuesEqual = equalityFn(previousValue, nextValue);
-          if (nextRevision !== previousRevision || !valuesEqual) {
-            previousRevision = nextRevision;
-            previousValue = nextValue;
-            if (!valuesEqual) {
-              onStoreChange();
-            }
-          }
-        },
+        () => advanceCell(cell, readCurrent, equalityFn, onStoreChange),
         { exact },
-      );
-    },
-    [store, normalizedPath, equalityFn, exact, pathKey],
+      ),
+    [store, normalizedPath, equalityFn, exact, cell, readCurrent],
   );
 
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const getSnapshot = useCallback(() => readCell(cell, readCurrent), [cell, readCurrent]);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot).value;
 };
 
 /**
@@ -116,62 +140,51 @@ export const useContractValue = (store, path, options = {}) => {
  * The path addresses the field like in the schema ("address.street", ["items", 0, "city"]),
  * the translation into the errors tree (fields/elements) is handled by the contract's
  * errorsAt helper. Without a path the whole errors tree of the contract is returned.
- * Returns undefined when there are no errors at the path.
- *
- * Requires @ikaru5/heimdall-contract >= 0.10.
+ * Returns undefined when there are no errors at the path. Every validation run
+ * announces itself on the "errors" path, so the hook re-renders per isValid call.
  *
  * @param {import("./types.js").ContractStore} store
  * @param {string | Array<string | number>} [path]
  * @param {{ equalityFn?: (previous: unknown, next: unknown) => boolean }} [options]
- * @returns {import("@ikaru5/heimdall-contract/types").ErrorNode | undefined}
+ * @returns {unknown}
  */
 export const useContractErrors = (store, path, options = {}) => {
   assertValidStore(store, "useContractErrors");
-  if ("function" !== typeof store.getOriginalContract) {
-    throw new TypeError(`useContractErrors ${STORE_ERROR}`);
-  }
 
-  const equalityFn = options.equalityFn ?? Object.is;
-  const normalizedPath = useMemo(() => normalizePath(path), [path]);
+  const equalityFn = options.equalityFn;
+  const pathKey = pathToKey(normalizePath(path));
+  const normalizedPath = useMemo(() => normalizePath(path), [pathKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cell = useMemo(createCell, [store, pathKey, equalityFn]);
 
-  const getSnapshot = useCallback(() => {
-    const contract = store.getOriginalContract();
-    if ("function" !== typeof contract.errorsAt) {
-      throw new TypeError("useContractErrors requires @ikaru5/heimdall-contract >= 0.10");
+  const readCurrent = useCallback(() => {
+    const contract = contractOf(store);
+    if (!contract || "function" !== typeof contract.errorsAt) {
+      throw new TypeError("useContractErrors requires @ikaru5/heimdall-contract >= 0.11");
     }
     return normalizedPath.length ? contract.errorsAt(normalizedPath) : contract.errors;
   }, [store, normalizedPath]);
 
   const subscribe = useCallback(
-    (onStoreChange) => {
-      let previousValue = getSnapshot();
-      // every change inside the errors tree bubbles up to the "errors" key
-      return store.subscribe(["errors"], () => {
-        const nextValue = getSnapshot();
-        if (!equalityFn(previousValue, nextValue)) {
-          previousValue = nextValue;
-          onStoreChange();
-        }
-      });
-    },
-    [store, getSnapshot, equalityFn],
+    (onStoreChange) =>
+      store.subscribe(["errors"], () => advanceCell(cell, readCurrent, equalityFn, onStoreChange)),
+    [store, readCurrent, equalityFn, cell],
   );
 
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const getSnapshot = useCallback(() => readCell(cell, readCurrent), [cell, readCurrent]);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot).value;
 };
 
 /**
- * Returns the proxied contract and re-renders whenever it changes.
+ * Re-renders on every contract change and returns the raw contract instance.
  * @param {import("./types.js").ContractStore} store
  * @returns {any}
  */
 export const useContract = (store) => {
   assertValidStore(store, "useContract");
-  const revision = useContractSelector(store, () => store.getRevision());
-  return useMemo(() => {
-    void revision;
-    return getContractProxy(store);
-  }, [store, revision]);
+  const selector = useCallback(() => store.getRevision(), [store]);
+  useContractSelector(store, selector);
+  return contractOf(store);
 };
 
-export const __HOOK_INTERNALS__ = { getContractProxy };
+export const __HOOK_INTERNALS__ = { contractOf };

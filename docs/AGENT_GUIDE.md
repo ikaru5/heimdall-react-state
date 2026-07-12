@@ -12,10 +12,10 @@
 
 ```
 src/
-  createContractStore.js   # Core observable store layer around contracts
+  createContractStore.js   # Thin adapter: contract mutation seam -> path subscriptions
   hooks.js                 # React hook implementations (useContractValue, ...)
   index.js                 # Public API / re-exports
-  internal/                # Helpers (path utilities, proxy wrappers, revisions)
+  internal/                # Helpers (path utilities: normalize, keys, ancestors)
   types.js                 # JSDoc type definitions for contributors
 
 docs/
@@ -29,9 +29,14 @@ eslint.config.js           # Flat ESLint configuration (ESLint 9, replaces .esli
 
 ## Non-negotiable principles
 
-1. **Trust `heimdall-contract`:** Never mutate its internal state outside the public API (`assign`, `setValueAtPath`, etc.).
-2. **Path-driven reactivity:** Every mutation must notify the relevant path and its ancestors via `emitChange`. New features must preserve this notification chain.
-3. **Stable proxies:** Object and array proxies are cached. When working on `wrap*` helpers, ensure identities remain per instance.
+1. **Never instrument the contract:** The store observes the contract exclusively through
+   its official mutation seam (`subscribeMutations`, contract 0.11+). No proxies, no
+   method patching, no monkey-patching - the contract instance stays untouched. Raw writes
+   being invisible is a documented non-goal, not a bug.
+2. **Path-driven reactivity:** Every seam notification reaches the relevant path, its ancestors and its descendants via `emitChange`. New features must preserve this notification chain.
+3. **Tick-cell snapshots:** Hooks cache their `{ value }` snapshot per notification, never
+   per call. Snapshot identity must change on every non-suppressed notification (in-place
+   mutations!) and stay stable between notifications (React caching contract).
 4. **Concurrent-mode safe hooks:** All hooks rely on `useSyncExternalStore`. Extensions have to keep this pattern.
 5. **Absolute coverage:** Jest coverage must remain at 100% across statements, branches, lines, and functions. `istanbul ignore` directives are allowed only for defensive guards that cannot be triggered via public APIs (document the rationale inline). The pure type module `src/types.js` is excluded from coverage because it has no runtime behaviour to test.
 
@@ -53,9 +58,13 @@ eslint.config.js           # Flat ESLint configuration (ESLint 9, replaces .esli
 
 ## Common pitfalls & checks
 
-- **Missing instrumentation:** New mutation paths (e.g. additional contract methods) must trigger `emitChange`.
-- **Array operations:** Use the existing `MUTATING_ARRAY_METHODS` list when additional methods need handling.
-- **Memory leaks:** Always use WeakMap/WeakSet for new caches so contracts can be released.
+- **New observable mutations belong into the contract:** If a write should notify React,
+  it has to run through the contract's explicit API - extend `heimdall-contract`'s seam,
+  never add store-side instrumentation.
+- **No `isValid()` inside selectors:** A validation run notifies the store and would loop
+  the render. Read `contract.isValidState` instead.
+- **Store lifecycle:** The store holds a live subscription on the contract - call
+  `store.destroy()` when replacing a store, and cover it in tests.
 - **Subscriptions:** When extending `subscribe` options, update the `unsubscribe` logic accordingly.
 
 ## When to update this file

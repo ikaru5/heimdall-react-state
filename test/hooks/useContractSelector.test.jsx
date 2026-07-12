@@ -4,7 +4,7 @@ import { render, renderHook } from "@testing-library/react";
 
 import { createContractStore } from "../../src/createContractStore.js";
 import { __HOOK_INTERNALS__, useContractSelector } from "../../src/hooks.js";
-import { ProfileContract } from "../helpers/contracts.js";
+import { ProfileContract, ProjectContract } from "../helpers/contracts.js";
 import { silenceConsoleError } from "../helpers/silenceConsoleError.js";
 
 function SelectorProbe({ store, selector, options, onRender }) {
@@ -58,17 +58,17 @@ describe("useContractSelector", () => {
     expect(onRender).toHaveBeenLastCalledWith("Ada");
 
     await act(async () => {
-      store.contract.profile.lastName = "Hopper";
+      store.setValue("profile.lastName", "Hopper");
     });
     expect(onRender).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      store.contract.profile.firstName = "ADA";
+      store.setValue("profile.firstName", "ADA");
     });
     expect(onRender).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      store.contract.profile.firstName = "Grace";
+      store.setValue("profile.firstName", "Grace");
     });
     expect(onRender).toHaveBeenCalledTimes(2);
     expect(onRender).toHaveBeenLastCalledWith("Grace");
@@ -76,6 +76,26 @@ describe("useContractSelector", () => {
     expect(equalityFn).toHaveBeenCalled();
 
     unmount();
+  });
+
+  it("re-renders by default even when the selector result is referentially equal", async () => {
+    const contract = new ProjectContract();
+    contract.assign({ project: { tasks: ["initial"], metadata: {} } });
+    const store = createContractStore(contract);
+    const onRender = jest.fn();
+    const selector = (current) => current.project.tasks;
+
+    render(<SelectorProbe store={store} selector={selector} onRender={onRender} />);
+    expect(onRender).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      store.setValue("project.tasks.0", "changed");
+    });
+
+    // same array instance, new content - without an equalityFn the change is visible
+    expect(onRender).toHaveBeenCalledTimes(2);
+    expect(onRender.mock.lastCall[0]).toBe(onRender.mock.calls[0][0]);
+    expect(onRender.mock.lastCall[0]).toEqual(["changed"]);
   });
 
   it("falls back to the contract property when getContract is missing", () => {
@@ -103,8 +123,12 @@ describe("useContractSelector", () => {
     expect(selector).toHaveBeenCalledWith(store.contract);
   });
 
-  it("returns undefined when no store instance is provided", () => {
-    const { getContractProxy } = __HOOK_INTERNALS__;
-    expect(getContractProxy(undefined)).toBeUndefined();
+  it("resolves the contract through the available accessor", () => {
+    const { contractOf } = __HOOK_INTERNALS__;
+    const contract = { marker: true };
+    expect(contractOf(undefined)).toBeUndefined();
+    expect(contractOf({ getOriginalContract: () => contract })).toBe(contract);
+    expect(contractOf({ getContract: () => contract })).toBe(contract);
+    expect(contractOf({ contract })).toBe(contract);
   });
 });

@@ -33,9 +33,7 @@ function BiographyEditor({ store }) {
     <textarea
       aria-label="Biography"
       value={contract.profile.bio}
-      onChange={(event) => {
-        contract.profile.bio = event.target.value;
-      }}
+      onChange={(event) => store.setValue("profile.bio", event.target.value)}
     />
   );
 }
@@ -70,13 +68,13 @@ describe("ProfileForm component", () => {
     expect(screen.getByTestId("profile-summary")).toHaveTextContent("Ada Lovelace");
 
     await act(async () => {
-      store.contract.profile.firstName = "Grace";
+      store.setValue("profile.firstName", "Grace");
     });
     expect(screen.getByTestId("first-name")).toHaveTextContent("Grace");
     expect(screen.getByTestId("profile-summary")).toHaveTextContent("Grace Lovelace");
 
     await act(async () => {
-      store.contract.profile.lastName = "Hopper";
+      store.setValue("profile.lastName", "Hopper");
     });
     expect(screen.getByTestId("last-name")).toHaveTextContent("Hopper");
     expect(screen.getByTestId("profile-summary")).toHaveTextContent("Grace Hopper");

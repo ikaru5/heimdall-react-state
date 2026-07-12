@@ -47,13 +47,14 @@ describe("useContractErrors", () => {
       isValid: () => true,
       errors: {},
       schema: {},
+      subscribeMutations: () => () => {},
     };
     const store = createContractStore(legacyContract);
 
     silenceConsoleError(() => {
       expect(() => {
         renderHook(() => useContractErrors(store, "email"));
-      }).toThrow("requires @ikaru5/heimdall-contract >= 0.10");
+      }).toThrow("requires @ikaru5/heimdall-contract >= 0.11");
     });
   });
 

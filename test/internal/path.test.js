@@ -1,7 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
 
 import {
-  RAW_SYMBOL,
   normalizePath,
   pathToKey,
   readAtPath,
@@ -47,17 +46,5 @@ describe("internal/path utilities", () => {
     const visited = [];
     traverseAncestors(["profile", "firstName"], (key) => visited.push(key));
     expect(visited).toEqual(["profile.firstName", "profile", ""]);
-  });
-
-  it("exposes a raw symbol for proxy access", () => {
-    const target = { value: 1 };
-    const proxy = new Proxy(target, {
-      get(obj, property, receiver) {
-        if (property === RAW_SYMBOL) return obj;
-        return Reflect.get(obj, property, receiver);
-      },
-    });
-
-    expect(proxy[RAW_SYMBOL]).toBe(target);
   });
 });
